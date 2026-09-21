@@ -1,0 +1,11 @@
+[package]
+name = "ghostrefs"
+version = "0.0.1"
+edition = "2024"
+description = "Find code kept alive only by tests"
+license = "MIT"
+repository = "https://github.com/milssky/ghostrefs"
+
+[dependencies]
+tree-sitter = "0.27"
+tree-sitter-python = "0.25"
