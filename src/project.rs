@@ -1,33 +1,21 @@
 use std::fs;
+use std::io;
 use std::path::Path;
 
-use tree_sitter::Parser;
+use crate::tree_parser::parse_file;
 
 
-
-pub fn parse_file(path: &Path) {
-    let source = fs::read_to_string(path).expect("failed to read file");
-    let mut parser = Parser::new();
-
-    parser
-        .set_language(&tree_sitter_python::LANGUAGE.into())
-        .expect("failed to load Python grammar");
-
-    let tree = parser
-        .parse(&source, None)
-        .expect("failed to parse");
-
-    let root = tree.root_node();
-    let mut cursor = root.walk();
-
-    for child in root.children(&mut cursor) {
-        let text = child
-            .utf8_text(source.as_bytes())
-            .expect("node contains invalid UTF-8");
-
-        println!("kind: {}", child.kind());
-        println!("range: {:?}", child.range());
-        println!("text:\n{text}");
-        println!("---");
+// TODO: move to other crate?
+pub fn parse_dir(path: &Path) -> io::Result<()> {
+    for entry in fs::read_dir(path)? {
+        let entry = entry?;
+        let path = entry.path();
+        if path.is_dir() {
+            parse_dir(&path)?;
+        } else {
+            println!("{}", path.display());
+            parse_file(&path);
+        }
     }
+    Ok(())
 }

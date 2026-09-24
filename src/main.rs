@@ -2,7 +2,7 @@ use clap::Parser;
 
 mod cli;
 mod project;
-
+mod tree_parser;
 
 fn main() {
     let cli = cli::Cli::parse();
@@ -11,5 +11,5 @@ fn main() {
     if cli.verbose {
         println!("verbose enabled"); // TODO
     }
-    project::parse_file(&cli.path);
+    let _ = project::parse_dir(&cli.path);
 }
