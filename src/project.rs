@@ -14,7 +14,8 @@ pub fn parse_dir(path: &Path) -> io::Result<()> {
             parse_dir(&path)?;
         } else {
             println!("{}", path.display());
-            parse_file(&path);
+            let file = parse_file(&path);
+            println!("{:#?}", file);
         }
     }
     Ok(())

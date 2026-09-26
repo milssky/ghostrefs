@@ -5,9 +5,13 @@ use clap::Parser;
 #[derive(Parser)]
 #[command(version, about)]
 pub struct Cli {
-    /// Set path to tests
+    /// Production package to analyze
     #[arg(short, long, value_parser = parse_directory)]
-    pub path: PathBuf,
+    pub source: PathBuf,
+    
+    /// Directory containing tests
+    #[arg(short, long, value_parser = parse_directory)]
+    pub tests: PathBuf,
 
     /// Verbose level
     #[arg(short, long)]
