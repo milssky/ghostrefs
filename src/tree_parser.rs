@@ -70,11 +70,11 @@ pub fn parse_source(path: PathBuf, source: &str) -> Result<ParsedFile, ParseErro
 
     parser
         .set_language(&tree_sitter_python::LANGUAGE.into())
-        .expect("failed to load Python grammar");
+        .map_err(|source| ParseError::ConfigureLanguage { source })?;
 
     let tree = parser
-        .parse(&source, None)
-        .expect("failed to parse");
+        .parse(source, None)
+        .ok_or_else(|| ParseError::ParseFailed { path: path.clone() })?;
 
     let root = tree.root_node();
     if root.has_error() {
@@ -87,7 +87,7 @@ pub fn parse_source(path: PathBuf, source: &str) -> Result<ParsedFile, ParseErro
     collect_symbols(root, source, &mut scope, &mut symbols);
 
     Ok(
-        ParsedFile { path, symbols: symbols, references: Vec::new() }
+        ParsedFile { path, symbols, references: Vec::new() }
     )
 }
 
@@ -150,7 +150,6 @@ fn collect_symbols(
             name: name.to_owned(),
             qualname,
             kind,
-            // Для отчёта удобнее позиция имени, а не всего тела.
             span: source_span(name_node),
         });
 

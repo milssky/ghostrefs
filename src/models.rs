@@ -54,12 +54,16 @@ pub struct Symbol {
 pub struct ParsedFile {
     pub path: PathBuf,
     pub symbols: Vec<Symbol>,
-    pub references: Vec<Reference>,
+    pub references: Vec<Reference>,}
+
+
+#[derive(Debug, PartialEq, Eq)]
+pub struct ParsedDir {
+    pub path: PathBuf,
+    pub files: Vec<ParsedFile>
 }
 
 #[derive(Clone, Copy, PartialEq, Eq)]
-
-
 pub enum ScopeKind {
     Class,
     Function,

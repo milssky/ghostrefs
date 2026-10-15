@@ -12,5 +12,8 @@ fn main() {
     if cli.verbose {
         println!("verbose enabled"); // TODO
     }
-    let _ = project::parse_dir(&cli.tests);
+    let tests_tree = project::parse_dir(&cli.tests);
+    let project_tree = project::parse_dir(&cli.source);
+    let _ = dbg!(tests_tree);
+    let _ = dbg!(project_tree);
 }
