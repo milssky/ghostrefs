@@ -39,11 +39,15 @@ pub fn parse_dir(path: &Path) -> Result<ParsedDir, ProjectError> {
     for entry in fs::read_dir(path)? {
         let entry = entry?;
         let path = entry.path();
+        // NOTE: is_dir() follows symlinks. It may cause
+        // infinite recursion.
         if path.is_dir() {
-            parse_dir(&path)?;
-        } else {
-            let file = parse_file(&path);
-            parsed_files_buf.push(file?);
+            let nested = parse_dir(&path)?;
+            parsed_files_buf.extend(nested.files);
+        } else if path.extension().is_some_and(|ext| ext == "py"){
+            parsed_files_buf.push(
+                parse_file(&path)?
+            );
         }
     }
     Ok(ParsedDir{

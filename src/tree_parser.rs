@@ -3,7 +3,7 @@ use std::error::Error;
 use std::path::{Path, PathBuf};
 use tree_sitter::Parser;
 
-use crate::models::{ParsedFile, Position, SourceSpan, Symbol, ScopeKind, SymbolKind, Scope};
+use crate::models::{ParsedFile, Position, Reference, ReferenceKind, Scope, ScopeKind, SourceSpan, Symbol, SymbolKind};
 
 
 #[derive(Debug)]
@@ -21,6 +21,13 @@ pub enum ParseError {
     InvalidSyntax {
         path: PathBuf,
     }
+}
+
+struct ParseContext<'a> {
+    source: &'a str,
+    scope: Vec<Scope>,
+    symbols: Vec<Symbol>,
+    references: Vec<Reference>,
 }
 
 
@@ -81,13 +88,21 @@ pub fn parse_source(path: PathBuf, source: &str) -> Result<ParsedFile, ParseErro
         return Err(ParseError::InvalidSyntax { path })
     }
 
-    let mut symbols = Vec::new();
-    let mut scope = Vec::new();
+    let mut ctx = ParseContext { 
+        source,
+        scope: Vec::new(),
+        symbols: Vec::new(),
+        references: Vec::new(),
+    };
 
-    collect_symbols(root, source, &mut scope, &mut symbols);
+    collect_items(root, &mut ctx);
 
     Ok(
-        ParsedFile { path, symbols, references: Vec::new() }
+        ParsedFile {
+            path,
+            symbols: ctx.symbols,
+            references: ctx.references
+        }
     )
 }
 
@@ -108,67 +123,99 @@ fn source_span(node: tree_sitter::Node<'_>) -> SourceSpan {
     }
 }
 
-fn collect_symbols(
+
+fn collect_definition(
     node: tree_sitter::Node<'_>,
-    source: &str,
-    scope: &mut Vec<Scope>,
-    symbols: &mut Vec<Symbol>,
+    ctx: &mut ParseContext<'_>,
+    scope_kind: ScopeKind,
 ) {
-    let scope_kind = match node.kind() {
-        "class_definition" => Some(ScopeKind::Class),
-        "function_definition" => Some(ScopeKind::Function),
-        _ => None,
+    let name_node = node
+        .child_by_field_name("name")
+        .expect("definition must have a name");
+
+    let name = &ctx.source[name_node.byte_range()];
+
+    let qualname = ctx.scope
+        .iter()
+        .map(|scope| scope.name.as_str())
+        .chain(std::iter::once(name))
+        .collect::<Vec<_>>()
+        .join(".");
+
+    let kind = match scope_kind {
+        ScopeKind::Class => SymbolKind::Class,
+        ScopeKind::Function
+            if ctx.scope.last().is_some_and(|parent| {
+                parent.kind == ScopeKind::Class
+            }) =>
+        {
+            SymbolKind::Method
+        }
+        ScopeKind::Function => SymbolKind::Function,
     };
 
-    if let Some(scope_kind) = scope_kind {
-        let name_node = node
-            .child_by_field_name("name")
-            .expect("definition must have a name");
+    ctx.symbols.push(Symbol {
+        name: name.to_owned(),
+        qualname,
+        kind,
+        span: source_span(name_node),
+    });
 
-        let name = &source[name_node.byte_range()];
+    ctx.scope.push(Scope {
+        name: name.to_owned(),
+        kind: scope_kind,
+    });
 
-        let qualname = scope
-            .iter()
-            .map(|scope| scope.name.as_str())
-            .chain(std::iter::once(name))
-            .collect::<Vec<_>>()
-            .join(".");
-
-        let kind = match scope_kind {
-            ScopeKind::Class => SymbolKind::Class,
-            ScopeKind::Function
-                if scope.last().is_some_and(|parent| {
-                    parent.kind == ScopeKind::Class
-                }) =>
-            {
-                SymbolKind::Method
-            }
-            ScopeKind::Function => SymbolKind::Function,
-        };
-
-        symbols.push(Symbol {
-            name: name.to_owned(),
-            qualname,
-            kind,
-            span: source_span(name_node),
-        });
-
-        scope.push(Scope {
-            name: name.to_owned(),
-            kind: scope_kind,
-        });
-
-        if let Some(body) = node.child_by_field_name("body") {
-            collect_symbols(body, source, scope, symbols);
-        }
-
-        scope.pop();
-        return;
+    if let Some(body) = node.child_by_field_name("body") {
+        collect_items(body, ctx);
     }
 
+    ctx.scope.pop();    
+}
+
+
+fn collect_children(node: tree_sitter::Node<'_>, ctx: &mut ParseContext<'_>) {
     let mut cursor = node.walk();
 
     for child in node.named_children(&mut cursor) {
-        collect_symbols(child, source, scope, symbols);
+        collect_items(child, ctx);
     }
+}
+
+fn collect_call(node: tree_sitter::Node<'_>, ctx: &mut ParseContext<'_>) {
+    let Some(function) = node.child_by_field_name("function") else {
+        return;
+    };
+
+    let name = &ctx.source[function.byte_range()];
+
+    ctx.references.push(Reference {
+        name: name.to_owned(), 
+        kind: ReferenceKind::Call, 
+        span: source_span(function) 
+    });
+}
+
+
+fn collect_items(
+    node: tree_sitter::Node<'_>,
+    ctx: &mut ParseContext<'_>,
+) {
+     match node.kind() {
+        "class_definition" => {
+            collect_definition(node, ctx, ScopeKind::Class);
+        }
+        "function_definition" => {
+            collect_definition(node, ctx, ScopeKind::Function);
+        }
+        "call" => {
+            collect_call(node, ctx);
+            collect_children(node, ctx);
+        },
+        // TODO: collect imports? 
+        _ => {
+            collect_children(node, ctx);
+        },
+    };
+
 }
