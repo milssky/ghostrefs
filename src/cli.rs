@@ -18,7 +18,6 @@ pub struct Cli {
     pub verbose: bool,
 }
 
-
 fn parse_directory(path_value: &str) -> Result<PathBuf, String> {
     let path = PathBuf::from(path_value);
 

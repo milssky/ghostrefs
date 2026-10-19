@@ -2,7 +2,7 @@ use std::fs;
 use std::io;
 use std::path::Path;
 
-use crate::tree_parser::{ParseError, parse_file};
+use crate::language::{Language, ParseError};
 use crate::models::{ParsedDir, ParsedFile};
 
 
@@ -11,7 +11,6 @@ pub enum ProjectError {
     Io(io::Error),
     Parse(ParseError),
 }
-
 
 impl From<io::Error> for ProjectError {
     fn from(value: io::Error) -> Self {
@@ -44,10 +43,8 @@ pub fn parse_dir(path: &Path) -> Result<ParsedDir, ProjectError> {
         if path.is_dir() {
             let nested = parse_dir(&path)?;
             parsed_files_buf.extend(nested.files);
-        } else if path.extension().is_some_and(|ext| ext == "py"){
-            parsed_files_buf.push(
-                parse_file(&path)?
-            );
+        } else if let Some(language) = Language::from_path(&path) {
+            parsed_files_buf.push(language.parse_file(&path)?);
         }
     }
     Ok(ParsedDir{

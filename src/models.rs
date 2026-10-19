@@ -8,7 +8,6 @@ pub enum SymbolKind {
     Method, //?
 }
 
-
 #[derive(Debug, PartialEq, Eq)]
 pub enum ReferenceKind {
     Import,
@@ -16,13 +15,11 @@ pub enum ReferenceKind {
     Name,
 }
 
-
 #[derive(Debug, PartialEq, Eq)]
 pub struct Position {
     pub row: usize,
     pub column: usize,
 }
-
 
 #[derive(Debug, PartialEq, Eq)]
 pub struct SourceSpan {
@@ -32,14 +29,12 @@ pub struct SourceSpan {
     pub end: Position,
 }
 
-
 #[derive(Debug, PartialEq, Eq)]
 pub struct Reference {
     pub name: String,
     pub kind: ReferenceKind,
     pub span: SourceSpan,
 }
-
 
 #[derive(Debug, PartialEq, Eq)]
 pub struct Symbol {
@@ -49,13 +44,11 @@ pub struct Symbol {
     pub span: SourceSpan, 
 }
 
-
 #[derive(Debug, PartialEq, Eq)]
 pub struct ParsedFile {
     pub path: PathBuf,
     pub symbols: Vec<Symbol>,
     pub references: Vec<Reference>,}
-
 
 #[derive(Debug, PartialEq, Eq)]
 pub struct ParsedDir {
@@ -68,7 +61,6 @@ pub enum ScopeKind {
     Class,
     Function,
 }
-
 
 pub struct Scope {
     pub name: String,

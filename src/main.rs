@@ -2,7 +2,7 @@ use clap::Parser;
 
 mod cli;
 mod project;
-mod tree_parser;
+mod language;
 mod models;
 
 fn main() {
