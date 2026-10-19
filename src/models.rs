@@ -11,6 +11,10 @@ pub enum SymbolKind {
 pub enum ReferenceKind {
     Import,
     Call,
+    #[expect(
+        dead_code,
+        reason = "Collecting name references is not implemented yet"
+    )]
     Name,
 }
 
