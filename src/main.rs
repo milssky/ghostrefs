@@ -1,9 +1,9 @@
 use clap::Parser;
 
 mod cli;
-mod project;
 mod language;
 mod models;
+mod project;
 
 fn main() {
     let cli = cli::Cli::parse();

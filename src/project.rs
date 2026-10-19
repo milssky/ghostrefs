@@ -5,7 +5,6 @@ use std::path::Path;
 use crate::language::{Language, ParseError};
 use crate::models::{ParsedDir, ParsedFile};
 
-
 #[derive(Debug)]
 pub enum ProjectError {
     Io(io::Error),
@@ -28,7 +27,7 @@ impl std::fmt::Display for ProjectError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             Self::Io(error) => write!(f, "{error}"),
-            Self::Parse(error) => write!(f, "{error}")
+            Self::Parse(error) => write!(f, "{error}"),
         }
     }
 }
@@ -47,7 +46,7 @@ pub fn parse_dir(path: &Path) -> Result<ParsedDir, ProjectError> {
             parsed_files_buf.push(language.parse_file(&path)?);
         }
     }
-    Ok(ParsedDir{
+    Ok(ParsedDir {
         path: path.to_path_buf(),
         files: parsed_files_buf,
     })

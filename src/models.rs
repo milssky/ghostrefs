@@ -1,6 +1,5 @@
 use std::path::PathBuf;
 
-
 #[derive(Debug, PartialEq, Eq)]
 pub enum SymbolKind {
     Function,
@@ -41,19 +40,20 @@ pub struct Symbol {
     pub name: String,
     pub qualname: String,
     pub kind: SymbolKind,
-    pub span: SourceSpan, 
+    pub span: SourceSpan,
 }
 
 #[derive(Debug, PartialEq, Eq)]
 pub struct ParsedFile {
     pub path: PathBuf,
     pub symbols: Vec<Symbol>,
-    pub references: Vec<Reference>,}
+    pub references: Vec<Reference>,
+}
 
 #[derive(Debug, PartialEq, Eq)]
 pub struct ParsedDir {
     pub path: PathBuf,
-    pub files: Vec<ParsedFile>
+    pub files: Vec<ParsedFile>,
 }
 
 #[derive(Clone, Copy, PartialEq, Eq)]

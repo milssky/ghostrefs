@@ -1,33 +1,23 @@
-use std::{fs, fmt, io};
 use std::error::Error;
 use std::path::{Path, PathBuf};
+use std::{fmt, fs, io};
 use tree_sitter::Parser;
 
 use crate::models::ParsedFile;
 
-
 #[derive(Debug)]
 pub enum ParseError {
-    ReadFile {
-        path: PathBuf,
-        source: io::Error,
-    },
-    ConfigureLanguage {
-        source: tree_sitter::LanguageError,
-    },
-    ParseFailed {
-        path: PathBuf,
-    },
-    InvalidSyntax {
-        path: PathBuf,
-    }
+    ReadFile { path: PathBuf, source: io::Error },
+    ConfigureLanguage { source: tree_sitter::LanguageError },
+    ParseFailed { path: PathBuf },
+    InvalidSyntax { path: PathBuf },
 }
 
 impl fmt::Display for ParseError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             Self::ReadFile { path, source } => {
-                write!(f,  "failed to read {}: {source}", path.display())
+                write!(f, "failed to read {}: {source}", path.display())
             }
             Self::ConfigureLanguage { source } => {
                 write!(f, "failed to configure Python parser: {source}")
@@ -53,14 +43,11 @@ impl Error for ParseError {
 }
 
 pub fn parse_file(path: &Path) -> Result<ParsedFile, ParseError> {
-    let source = fs::read_to_string(path).map_err(|source| {
-        ParseError::ReadFile { 
-            path: path.to_owned(), 
-            source,
-        }
+    let source = fs::read_to_string(path).map_err(|source| ParseError::ReadFile {
+        path: path.to_owned(),
+        source,
     })?;
     parse_source(path.to_owned(), &source)
-    
 }
 
 pub fn parse_source(path: PathBuf, source: &str) -> Result<ParsedFile, ParseError> {
@@ -76,7 +63,7 @@ pub fn parse_source(path: PathBuf, source: &str) -> Result<ParsedFile, ParseErro
 
     let root = tree.root_node();
     if root.has_error() {
-        return Err(ParseError::InvalidSyntax { path })
+        return Err(ParseError::InvalidSyntax { path });
     }
 
     let (symbols, references) = super::collector::collect(root, source);

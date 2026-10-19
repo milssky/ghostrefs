@@ -1,6 +1,5 @@
-use std::path::PathBuf;
 use clap::Parser;
-
+use std::path::PathBuf;
 
 #[derive(Parser)]
 #[command(version, about)]
@@ -8,7 +7,7 @@ pub struct Cli {
     /// Production package to analyze
     #[arg(short, long, value_parser = parse_directory)]
     pub source: PathBuf,
-    
+
     /// Directory containing tests
     #[arg(short, long, value_parser = parse_directory)]
     pub tests: PathBuf,
