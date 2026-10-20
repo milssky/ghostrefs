@@ -9,5 +9,7 @@ repository = "https://github.com/milssky/ghostrefs"
 [dependencies]
 async-lsp = "0.2.4"
 clap = { version = "4.6.7", features = ["derive"] }
+tokio = { version = "1.54.0", features = ["macros", "rt", "process"] }
+tokio-util = { version = "0.7.20", features = ["compat"] }
 tree-sitter = "0.27"
 tree-sitter-python = "0.25"

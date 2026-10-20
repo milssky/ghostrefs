@@ -1,6 +1,6 @@
 import pytest
 
-from static.python.project.main import TestOnlyUsedClass, test_only_used_func 
+from fixtures.python.project.main import TestOnlyUsedClass, test_only_used_func 
 
 @pytest.fixture
 def fix() -> int:
