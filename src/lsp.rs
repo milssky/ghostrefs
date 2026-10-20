@@ -7,13 +7,16 @@ use std::{
 use async_lsp::{
     LanguageServer, MainLoop, ServerSocket,
     lsp_types::{
-        DidOpenTextDocumentParams, DocumentSymbolParams, DocumentSymbolResponse, InitializeParams,
-        InitializedParams, TextDocumentIdentifier, TextDocumentItem, Url, WorkspaceFolder,
+        DidChangeConfigurationParams, DidOpenTextDocumentParams, DocumentSymbolParams,
+        DocumentSymbolResponse, InitializeParams, InitializedParams, TextDocumentIdentifier,
+        TextDocumentItem, Url, WorkspaceFolder,
     },
     router::Router,
 };
 use tokio::{process::Child, process::Command, task::JoinHandle};
 use tokio_util::compat::{TokioAsyncReadCompatExt, TokioAsyncWriteCompatExt};
+
+use crate::language::Language;
 
 type Error = Box<dyn std::error::Error>;
 
@@ -65,6 +68,12 @@ impl LspSession {
             child,
             io_task,
         })
+    }
+
+    pub fn configure(&mut self, settings: serde_json::Value) -> Result<(), Error> {
+        self.server
+            .did_change_configuration(DidChangeConfigurationParams { settings })?;
+        Ok(())
     }
 
     pub async fn open_document(&mut self, path: &Path, language_id: &str) -> Result<(), Error> {
@@ -125,23 +134,33 @@ impl LspSession {
     }
 }
 
+
 #[derive(Debug)]
+#[expect(
+    dead_code,
+    reason = "We need it now. Temp."
+)]
 pub struct FileSymbols {
     pub path: PathBuf,
     pub symbols: Option<DocumentSymbolResponse>,
 }
 
 pub fn run(root: &Path, files: &[PathBuf]) -> Result<Vec<FileSymbols>, Error> {
+    let language = Language::detect(files)?;
+
+    let config = language.lsp_config()?;
     let runtime = tokio::runtime::Builder::new_current_thread()
         .enable_all()
         .build()?;
 
     runtime.block_on(async {
-        let mut session = LspSession::start(root, "pyright-langserver", &["--stdio"]).await?;
+        let mut session = LspSession::start(root, config.command, config.args).await?;
 
         let analysis: Result<Vec<FileSymbols>, Error> = async {
+            session.configure(config.settings)?;
+
             for file in files {
-                session.open_document(file, "python").await?;
+                session.open_document(file, config.language_id).await?;
             }
 
             let mut results = Vec::new();
