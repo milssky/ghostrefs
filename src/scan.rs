@@ -1,53 +1,24 @@
 use std::fs;
 use std::io;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
-use crate::language::{Language, ParseError};
-use crate::models::{ParsedDir, ParsedFile};
+use crate::language::Language;
 
-#[derive(Debug)]
-pub enum ScanError {
-    Io(io::Error),
-    Parse(ParseError),
-}
+/// Find supported source files without reading or parsing their contents.
+pub fn scan_dir(path: &Path) -> io::Result<Vec<PathBuf>> {
+    let mut files = Vec::new();
 
-impl From<io::Error> for ScanError {
-    fn from(value: io::Error) -> Self {
-        Self::Io(value)
-    }
-}
-
-impl From<ParseError> for ScanError {
-    fn from(value: ParseError) -> Self {
-        Self::Parse(value)
-    }
-}
-
-impl std::fmt::Display for ScanError {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            Self::Io(error) => write!(f, "{error}"),
-            Self::Parse(error) => write!(f, "{error}"),
-        }
-    }
-}
-
-pub fn parse_dir(path: &Path) -> Result<ParsedDir, ScanError> {
-    let mut parsed_files_buf = Vec::<ParsedFile>::new();
     for entry in fs::read_dir(path)? {
-        let entry = entry?;
-        let path = entry.path();
-        // NOTE: is_dir() follows symlinks. It may cause
-        // infinite recursion.
-        if path.is_dir() && !path.is_symlink() {
-            let nested = parse_dir(&path)?;
-            parsed_files_buf.extend(nested.files);
-        } else if let Some(language) = Language::from_path(&path) {
-            parsed_files_buf.push(language.parse_file(&path)?);
+        let path = entry?.path();
+
+        if path.is_dir() {
+            if !path.is_symlink() {
+                files.extend(scan_dir(&path)?);
+            }
+        } else if path.is_file() && Language::from_path(&path).is_some() {
+            files.push(path.canonicalize()?);
         }
     }
-    Ok(ParsedDir {
-        path: path.to_path_buf(),
-        files: parsed_files_buf,
-    })
+
+    Ok(files)
 }

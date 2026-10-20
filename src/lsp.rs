@@ -7,9 +7,10 @@ use std::{
 use async_lsp::{
     LanguageServer, MainLoop, ServerSocket,
     lsp_types::{
-        DidChangeConfigurationParams, DidOpenTextDocumentParams, DocumentSymbolParams,
-        DocumentSymbolResponse, InitializeParams, InitializedParams, TextDocumentIdentifier,
-        TextDocumentItem, Url, WorkspaceFolder,
+        ClientCapabilities, DidChangeConfigurationParams, DidOpenTextDocumentParams,
+        DocumentSymbolClientCapabilities, DocumentSymbolParams, DocumentSymbolResponse,
+        InitializeParams, InitializedParams, TextDocumentClientCapabilities,
+        TextDocumentIdentifier, TextDocumentItem, Url, WorkspaceFolder,
     },
     router::Router,
 };
@@ -54,6 +55,16 @@ impl LspSession {
         server
             .initialize(InitializeParams {
                 process_id: Some(std::process::id()),
+                capabilities: ClientCapabilities {
+                    text_document: Some(TextDocumentClientCapabilities {
+                        document_symbol: Some(DocumentSymbolClientCapabilities {
+                            hierarchical_document_symbol_support: Some(true),
+                            ..Default::default()
+                        }),
+                        ..Default::default()
+                    }),
+                    ..Default::default()
+                },
                 workspace_folders: Some(vec![WorkspaceFolder {
                     uri: Url::from_directory_path(&root).unwrap(),
                     name: "workspace".into(),
@@ -135,7 +146,6 @@ impl LspSession {
 }
 
 #[derive(Debug)]
-#[expect(dead_code, reason = "We need it now. Temp.")]
 pub struct FileSymbols {
     pub path: PathBuf,
     pub symbols: Option<DocumentSymbolResponse>,
@@ -174,7 +184,6 @@ pub fn run(root: &Path, files: &[PathBuf]) -> Result<Vec<FileSymbols>, Error> {
         }
         .await;
 
-        // Пытаемся завершить сервер и при ошибке анализа.
         let shutdown = session.shutdown().await;
 
         let results = analysis?;
