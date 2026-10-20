@@ -134,12 +134,8 @@ impl LspSession {
     }
 }
 
-
 #[derive(Debug)]
-#[expect(
-    dead_code,
-    reason = "We need it now. Temp."
-)]
+#[expect(dead_code, reason = "We need it now. Temp.")]
 pub struct FileSymbols {
     pub path: PathBuf,
     pub symbols: Option<DocumentSymbolResponse>,
