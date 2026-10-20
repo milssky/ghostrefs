@@ -15,10 +15,24 @@ fn main() {
     if cli.verbose {
         println!("verbose enabled"); // TODO
     }
-    let tests_tree = scan::parse_dir(&cli.tests);
-    let project_tree = scan::parse_dir(&cli.source);
-    let _ = dbg!(tests_tree);
-    let _ = dbg!(project_tree);
+    let tests_tree = scan::parse_dir(&cli.tests).expect("failed to parse tests");
 
-    let _ = lsp::run(std::path::Path::new("fixtures/python"));
+    let project_tree = scan::parse_dir(&cli.source).expect("failed to parse source");
+
+    let mut files: Vec<_> = project_tree
+        .files
+        .iter()
+        .chain(tests_tree.files.iter())
+        .map(|file| {
+            file.path
+                .canonicalize()
+                .expect("failed to resolve file path")
+        })
+        .collect();
+
+    files.sort();
+    files.dedup();
+
+    let lsp_result = lsp::run(&cli.root, &files);
+    let _ = dbg!(lsp_result);
 }
