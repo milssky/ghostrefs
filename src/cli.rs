@@ -1,15 +1,19 @@
 use clap::Parser;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 #[derive(Parser)]
 #[command(version, about)]
 pub struct Cli {
-    /// Production package to analyze
-    #[arg(short, long, value_parser = parse_directory)]
+    /// Source code root folder
+    #[arg(short, long)]
+    pub root: PathBuf,
+
+    /// Production package to analyze in root folder
+    #[arg(short, long)]
     pub source: PathBuf,
 
-    /// Directory containing tests
-    #[arg(short, long, value_parser = parse_directory)]
+    /// Directory containing tests in root folder
+    #[arg(short, long)]
     pub tests: PathBuf,
 
     /// Verbose level
@@ -17,15 +21,24 @@ pub struct Cli {
     pub verbose: bool,
 }
 
-fn parse_directory(path_value: &str) -> Result<PathBuf, String> {
-    let path = PathBuf::from(path_value);
+impl Cli {
+    pub fn resolve_paths(mut self) -> Result<Self, String> {
+        self.root = resolve_directory(&self.root)?;
+        self.source = resolve_directory(&self.root.join(&self.source))?;
+        self.tests = resolve_directory(&self.root.join(&self.tests))?;
 
-    if !path.exists() {
-        return Err(format!("path does not exist: {}", path.display()));
+        Ok(self)
     }
-    if !path.is_dir() {
-        return Err(format!("path is not a directory: {}", path.display()));
+}
+
+fn resolve_directory(path: &Path) -> Result<PathBuf, String> {
+    let resolved = path
+        .canonicalize()
+        .map_err(|error| format!("Invalid directory {}: {error}", path.display()))?;
+
+    if !resolved.is_dir() {
+        return Err(format!("Not a directory: {}", resolved.display()));
     }
 
-    Ok(path)
+    Ok(resolved)
 }

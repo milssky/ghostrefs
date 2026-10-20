@@ -6,24 +6,24 @@ use crate::language::{Language, ParseError};
 use crate::models::{ParsedDir, ParsedFile};
 
 #[derive(Debug)]
-pub enum ProjectError {
+pub enum ScanError {
     Io(io::Error),
     Parse(ParseError),
 }
 
-impl From<io::Error> for ProjectError {
+impl From<io::Error> for ScanError {
     fn from(value: io::Error) -> Self {
         Self::Io(value)
     }
 }
 
-impl From<ParseError> for ProjectError {
+impl From<ParseError> for ScanError {
     fn from(value: ParseError) -> Self {
         Self::Parse(value)
     }
 }
 
-impl std::fmt::Display for ProjectError {
+impl std::fmt::Display for ScanError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             Self::Io(error) => write!(f, "{error}"),
@@ -32,14 +32,14 @@ impl std::fmt::Display for ProjectError {
     }
 }
 
-pub fn parse_dir(path: &Path) -> Result<ParsedDir, ProjectError> {
+pub fn parse_dir(path: &Path) -> Result<ParsedDir, ScanError> {
     let mut parsed_files_buf = Vec::<ParsedFile>::new();
     for entry in fs::read_dir(path)? {
         let entry = entry?;
         let path = entry.path();
         // NOTE: is_dir() follows symlinks. It may cause
         // infinite recursion.
-        if path.is_dir() {
+        if path.is_dir() && !path.is_symlink() {
             let nested = parse_dir(&path)?;
             parsed_files_buf.extend(nested.files);
         } else if let Some(language) = Language::from_path(&path) {
