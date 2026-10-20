@@ -1,9 +1,5 @@
 use std::path::{Path, PathBuf};
 
-use crate::models::ParsedFile;
-
-mod python;
-
 const DEFAULT_LSP_SETTINGS: &str = include_str!("../ghostrefs-lsp.json");
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -46,12 +42,6 @@ impl Language {
         }
     }
 
-    pub fn parse_file(self, path: &Path) -> Result<ParsedFile, ParseError> {
-        match self {
-            Self::Python => python::parse_file(path).map_err(ParseError::Python),
-        }
-    }
-
     pub fn lsp_config(self) -> Result<LspConfig, serde_json::Error> {
         Ok(match self {
             Self::Python => LspConfig {
@@ -61,26 +51,5 @@ impl Language {
                 settings: serde_json::from_str(DEFAULT_LSP_SETTINGS)?,
             },
         })
-    }
-}
-
-#[derive(Debug)]
-pub enum ParseError {
-    Python(python::ParseError),
-}
-
-impl std::fmt::Display for ParseError {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            Self::Python(error) => write!(f, "{error}"),
-        }
-    }
-}
-
-impl std::error::Error for ParseError {
-    fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
-        match self {
-            Self::Python(error) => Some(error),
-        }
     }
 }
