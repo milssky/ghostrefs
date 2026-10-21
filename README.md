@@ -1,3 +1,10 @@
+<p align="center">
+  <picture>
+    <source srcset="https://raw.githubusercontent.com/milssky/ghostrefs/master/docs/_static/images/ghostrefs.png" media="(prefers-color-scheme: dark)">
+    <img src="https://raw.githubusercontent.com/milssky/ghostrefs/master/docs/_static/images/ghostrefs-transparent.png#gh-light-mode-only" alt="ghostrefs logo" width="320" height="auto" />
+  </picture>
+</p>
+
 <h1 align="center">ghostrefs</h1>
 
 <p align="center">
