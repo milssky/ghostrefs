@@ -111,9 +111,7 @@ impl AnalysisScope<'_> {
     fn includes_in_report(&self, path: &Path, symbol: &SymbolAnalysis) -> bool {
         // Local variables and parameters remain in the graph. Nested declarations
         // and top-level variables can still be useful dead-code findings.
-        self.is_production(path)
-            && !self.ignore.matches(path)
-            && (!symbol.qualname.contains('.') || symbol.is_scope())
+        self.is_production(path) && !self.ignore.matches(path) && symbol.is_reportable()
     }
 
     fn validate_entry(&self, entry: &EntryPoint) -> Result<(), String> {

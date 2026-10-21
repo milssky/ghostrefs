@@ -18,13 +18,19 @@ From references to a graph
 
 1. Collect Python files from the workspace and requested source/test paths.
 2. Start Pyright, apply settings, and open the collected files.
-3. Request hierarchical document symbols and references for each declaration.
+3. Collect hierarchical document symbols, then request references sequentially.
+   Normal reports start with reportable production declarations and
+   follow incoming references to discover consumers, including class activation,
+   until no new consumers appear. Declarations with no path to a reported
+   symbol need no reference search. ``--graph`` requests every declaration.
 4. Assign references to their owning scope or module. Add edges from each
    consumer to the referenced symbol.
 5. Walk the graph from production, test, outside-scope, and unknown roots.
 
 References are static usage information, not a runtime execution trace.
 Imports and module-level expressions can also contribute edges.
+Pyright diagnostics are not requested; type information needed for symbols and
+references is evaluated on demand.
 
 Roots and conservative behavior
 --------------------------------

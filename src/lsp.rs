@@ -1,25 +1,19 @@
-use std::{
-    ops::ControlFlow,
-    path::{Path, PathBuf},
-    process::Stdio,
-};
+use std::{ops::ControlFlow, path::Path, process::Stdio};
 
 use async_lsp::{
     LanguageServer, MainLoop, ServerSocket,
     lsp_types::{
-        ClientCapabilities, DidChangeConfigurationParams, DidOpenTextDocumentParams,
-        DocumentSymbol, DocumentSymbolClientCapabilities, DocumentSymbolParams,
+        ClientCapabilities, DiagnosticClientCapabilities, DidChangeConfigurationParams,
+        DidOpenTextDocumentParams, DocumentSymbolClientCapabilities, DocumentSymbolParams,
         DocumentSymbolResponse, InitializeParams, InitializedParams, Location, Position,
         ReferenceContext, ReferenceParams, TextDocumentClientCapabilities, TextDocumentIdentifier,
         TextDocumentItem, TextDocumentPositionParams, Url, WorkspaceFolder,
+        request::{RegisterCapability, UnregisterCapability, WorkspaceDiagnosticRefresh},
     },
     router::Router,
 };
 use tokio::{process::Child, process::Command, task::JoinHandle};
 use tokio_util::compat::{TokioAsyncReadCompatExt, TokioAsyncWriteCompatExt};
-
-use crate::language::Language;
-use crate::models::{FileAnalysis, SymbolAnalysis};
 
 type Error = Box<dyn std::error::Error>;
 
@@ -42,6 +36,9 @@ impl LspSession {
 
         let (mainloop, mut server) = MainLoop::new_client(|_| {
             let mut router = Router::new(());
+            router.request::<RegisterCapability, _>(|_, _| async { Ok(()) });
+            router.request::<UnregisterCapability, _>(|_, _| async { Ok(()) });
+            router.request::<WorkspaceDiagnosticRefresh, _>(|_, _| async { Ok(()) });
             router.unhandled_notification(|_, _| ControlFlow::Continue(()));
             router
         });
@@ -59,6 +56,12 @@ impl LspSession {
                 process_id: Some(std::process::id()),
                 capabilities: ClientCapabilities {
                     text_document: Some(TextDocumentClientCapabilities {
+                        // We only need symbols and references. Pull diagnostics keep
+                        // Pyright from type-checking every opened file in the background.
+                        diagnostic: Some(DiagnosticClientCapabilities {
+                            dynamic_registration: Some(true),
+                            ..Default::default()
+                        }),
                         document_symbol: Some(DocumentSymbolClientCapabilities {
                             hierarchical_document_symbol_support: Some(true),
                             ..Default::default()
@@ -127,11 +130,9 @@ impl LspSession {
 
     pub async fn references(
         &mut self,
-        path: &Path,
+        uri: Url,
         position: Position,
     ) -> Result<Option<Vec<Location>>, Error> {
-        let uri = file_uri(&path.canonicalize()?)?;
-
         let references = self
             .server
             .references(ReferenceParams {
@@ -147,55 +148,6 @@ impl LspSession {
             })
             .await?;
         Ok(references)
-    }
-
-    async fn collect_files(
-        &mut self,
-        files: &[PathBuf],
-        language_id: &str,
-        settings: &serde_json::Value,
-    ) -> Result<Vec<FileAnalysis>, Error> {
-        self.configure(settings.clone())?;
-        // Open every document before requesting references across the workspace.
-        for file in files {
-            self.open_document(file, language_id).await?;
-        }
-        let mut results = Vec::new();
-        for file in files {
-            results.push(self.collect_file(file).await?);
-        }
-        Ok(results)
-    }
-
-    async fn collect_file(&mut self, path: &Path) -> Result<FileAnalysis, Error> {
-        let declarations = match self.document_symbols(path).await? {
-            Some(DocumentSymbolResponse::Nested(declarations)) => declarations,
-            Some(DocumentSymbolResponse::Flat(declarations)) if declarations.is_empty() => {
-                Vec::new()
-            }
-            Some(DocumentSymbolResponse::Flat(_)) => {
-                return Err(format!(
-                    "expected hierarchical document symbols for {}",
-                    path.display()
-                )
-                .into());
-            }
-            None => {
-                return Err(format!(
-                    "language server returned no document-symbol result for {}",
-                    path.display()
-                )
-                .into());
-            }
-        };
-        let mut symbols = flatten_symbols(declarations);
-        for symbol in &mut symbols {
-            symbol.references = self.references(path, symbol.selection_range.start).await?;
-        }
-        Ok(FileAnalysis {
-            path: path.to_path_buf(),
-            symbols,
-        })
     }
 
     pub async fn shutdown(mut self) -> Result<(), Error> {
@@ -217,67 +169,6 @@ impl LspSession {
     }
 }
 
-pub fn run(
-    root: &Path,
-    files: &[PathBuf],
-    settings: &serde_json::Value,
-) -> Result<Vec<FileAnalysis>, Error> {
-    let language = Language::detect(files)?;
-
-    let config = language.lsp_config();
-    let runtime = tokio::runtime::Builder::new_current_thread()
-        .enable_all()
-        .build()?;
-
-    runtime.block_on(async {
-        let mut session = LspSession::start(root, config.command, config.args).await?;
-
-        let analysis = session
-            .collect_files(files, config.language_id, settings)
-            .await;
-        let shutdown = session.shutdown().await;
-
-        let results = analysis?;
-        shutdown?;
-
-        Ok(results)
-    })
-}
-
-fn file_uri(path: &Path) -> Result<Url, Error> {
+pub fn file_uri(path: &Path) -> Result<Url, Error> {
     Url::from_file_path(path).map_err(|_| format!("invalid file path: {}", path.display()).into())
-}
-
-/// Preserve declaration order while flattening nested names in depth-first order.
-fn flatten_symbols(declarations: Vec<DocumentSymbol>) -> Vec<SymbolAnalysis> {
-    let mut pending: Vec<_> = declarations
-        .into_iter()
-        .rev()
-        .map(|symbol| (symbol, String::new()))
-        .collect();
-    let mut symbols = Vec::new();
-    while let Some((symbol, parent)) = pending.pop() {
-        let qualname = if parent.is_empty() {
-            symbol.name.clone()
-        } else {
-            format!("{parent}.{}", symbol.name)
-        };
-        if let Some(children) = symbol.children {
-            pending.extend(
-                children
-                    .into_iter()
-                    .rev()
-                    .map(|child| (child, qualname.clone())),
-            );
-        }
-        symbols.push(SymbolAnalysis {
-            name: symbol.name,
-            qualname,
-            kind: symbol.kind,
-            range: symbol.range,
-            selection_range: symbol.selection_range,
-            references: None,
-        });
-    }
-    symbols
 }

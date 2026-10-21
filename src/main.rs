@@ -2,6 +2,7 @@ use clap::Parser;
 
 mod analysis;
 mod cli;
+mod collect;
 mod config;
 mod graph;
 mod language;
@@ -19,7 +20,20 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         eprintln!("Collecting LSP symbols from {} files", files.len());
     }
 
-    let files = lsp::run(&cli.root, &files, &config.lsp_settings)?;
+    let files = collect::run(
+        &cli.root,
+        &files,
+        &config.lsp_settings,
+        if cli.graph {
+            collect::ReferenceMode::Graph
+        } else {
+            collect::ReferenceMode::Report {
+                source: &cli.source,
+                tests: &cli.tests,
+            }
+        },
+        cli.verbose,
+    )?;
     let graph = graph::build(&files);
     if cli.graph {
         report::print_graph(&graph);

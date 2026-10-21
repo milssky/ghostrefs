@@ -298,3 +298,51 @@ fn owner_at(graph: &Graph<'_>, file: &FileNodes, position: Position) -> NodeId {
         .max_by_key(|(_, range)| (range.start, std::cmp::Reverse(range.end)))
         .map_or(file.module, |(id, _)| id)
 }
+
+/// References add incoming edges. Starting with reportable production symbols,
+/// search their ancestors until no new consumers are discovered. A declaration
+/// outside this closure cannot affect any reported status or test chain.
+pub fn reference_targets(files: &[FileAnalysis], source: &Path, tests: &Path) -> Vec<Vec<bool>> {
+    let graph = build(files);
+    let roots: Vec<_> = graph
+        .nodes
+        .iter()
+        .enumerate()
+        .filter_map(|(index, node)| match node {
+            Node::Symbol { path, symbol }
+                if path.starts_with(source)
+                    && !path.starts_with(tests)
+                    && symbol.is_reportable() =>
+            {
+                Some(NodeId(index))
+            }
+            _ => None,
+        })
+        .collect();
+    let mut incoming = vec![Vec::new(); graph.nodes.len()];
+    for edge in &graph.edges {
+        incoming[edge.to.0].push(edge.from);
+    }
+    let ancestors = Reachability::walk(&incoming, &roots);
+    // Graph construction retains file order and declaration order. Unresolved
+    // nodes are appended after the collected modules and declarations.
+    let mut symbols = graph
+        .nodes
+        .iter()
+        .enumerate()
+        .filter(|(_, node)| matches!(node, Node::Symbol { .. }));
+    files
+        .iter()
+        .map(|file| {
+            file.symbols
+                .iter()
+                .map(|_| {
+                    let (index, _) = symbols
+                        .next()
+                        .expect("graph contains every collected symbol");
+                    ancestors.reached[index]
+                })
+                .collect()
+        })
+        .collect()
+}
