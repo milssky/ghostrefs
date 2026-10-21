@@ -47,3 +47,12 @@ Configure ignore patterns, production entry points, and Pyright settings in
 
 Findings are candidates for review: dynamic imports, reflection, and external
 consumers may be invisible to the language server.
+
+## Documentation
+
+Start with [Getting started](docs/index.rst), then explore the
+[CLI reference](docs/pages/cli.rst), [configuration](docs/pages/configuration.rst),
+and [analysis model](docs/pages/analysis.rst).
+
+See the [development guide](docs/pages/contributing.rst) to build the searchable
+HTML documentation locally.
