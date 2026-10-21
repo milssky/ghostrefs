@@ -26,82 +26,97 @@ impl Config {
     /// Project settings override bundled defaults; nested objects are merged.
     pub fn load(root: &Path) -> Result<Self, Box<dyn std::error::Error>> {
         let root = root.canonicalize()?;
-        let path = root.join(CONFIG_FILE);
-        let mut settings: Value = serde_json::from_str(DEFAULT_SETTINGS)?;
-
-        match fs::read_to_string(&path) {
-            Ok(text) => {
-                let overrides: Value = serde_json::from_str(&text)
-                    .map_err(|error| format!("invalid config {}: {error}", path.display()))?;
-                if !overrides.is_object() {
-                    return Err(format!("config {} must be a JSON object", path.display()).into());
-                }
-                merge(&mut settings, overrides);
-            }
-            Err(error) if error.kind() == io::ErrorKind::NotFound => {}
-            Err(error) => {
-                return Err(format!("cannot read config {}: {error}", path.display()).into());
-            }
-        }
-
+        let mut settings = load_settings(&root)?;
         // Keep ghostrefs-only options out of workspace/didChangeConfiguration.
-        let ghostrefs = settings
+        let options = settings
             .as_object_mut()
             .ok_or("bundled configuration must be a JSON object")?
             .remove("ghostrefs");
-        let mut patterns = GlobSetBuilder::new();
-        let mut production_entrypoints = Vec::new();
-        if let Some(options) = ghostrefs {
-            let options = options
-                .as_object()
-                .ok_or("ghostrefs config must be an object")?;
-            for key in options.keys() {
-                if !matches!(key.as_str(), "ignore" | "production_entrypoints") {
-                    return Err(format!("unknown ghostrefs setting: {key}").into());
-                }
-            }
-            if let Some(entries) = options.get("production_entrypoints") {
-                let entries = entries
-                    .as_array()
-                    .ok_or("ghostrefs.production_entrypoints must be an array of objects")?;
-                for entry in entries {
-                    production_entrypoints.push(parse_entry(&root, entry)?);
-                }
-            }
-            if let Some(ignore) = options.get("ignore") {
-                let globs: Vec<String> =
-                    serde_json::from_value(ignore.clone()).map_err(|error| {
-                        format!("ghostrefs.ignore must be an array of strings: {error}")
-                    })?;
-                for pattern in globs {
-                    if pattern.is_empty()
-                        || Path::new(&pattern).is_absolute()
-                        || pattern.split('/').any(|part| part == "..")
-                    {
-                        return Err(format!(
-                            "ignore pattern must be nonempty and relative to root: {pattern:?}"
-                        )
-                        .into());
-                    }
-                    let glob = GlobBuilder::new(&pattern)
-                        .literal_separator(true)
-                        .backslash_escape(false)
-                        .build()
-                        .map_err(|error| format!("invalid ignore pattern {pattern:?}: {error}"))?;
-                    patterns.add(glob);
-                }
-            }
-        }
-
+        let (ignore, production_entrypoints) = parse_options(&root, options)?;
         Ok(Self {
             lsp_settings: settings,
+            ignore,
             production_entrypoints,
-            ignore: IgnoreRules {
-                root,
-                patterns: patterns.build()?,
-            },
         })
     }
+}
+
+fn load_settings(root: &Path) -> Result<Value, Box<dyn std::error::Error>> {
+    let path = root.join(CONFIG_FILE);
+    let mut settings = serde_json::from_str(DEFAULT_SETTINGS)?;
+    match fs::read_to_string(&path) {
+        Ok(text) => {
+            let overrides: Value = serde_json::from_str(&text)
+                .map_err(|error| format!("invalid config {}: {error}", path.display()))?;
+            if !overrides.is_object() {
+                return Err(format!("config {} must be a JSON object", path.display()).into());
+            }
+            merge(&mut settings, overrides);
+        }
+        Err(error) if error.kind() == io::ErrorKind::NotFound => {}
+        Err(error) => {
+            return Err(format!("cannot read config {}: {error}", path.display()).into());
+        }
+    }
+    Ok(settings)
+}
+
+fn parse_options(
+    root: &Path,
+    options: Option<Value>,
+) -> Result<(IgnoreRules, Vec<EntryPoint>), Box<dyn std::error::Error>> {
+    let options = options.unwrap_or(Value::Object(Default::default()));
+    let options = options
+        .as_object()
+        .ok_or("ghostrefs config must be an object")?;
+    for key in options.keys() {
+        if !matches!(key.as_str(), "ignore" | "production_entrypoints") {
+            return Err(format!("unknown ghostrefs setting: {key}").into());
+        }
+    }
+    let mut entries = Vec::new();
+    if let Some(values) = options.get("production_entrypoints") {
+        let values = values
+            .as_array()
+            .ok_or("ghostrefs.production_entrypoints must be an array of objects")?;
+        for entry in values {
+            entries.push(parse_entry(root, entry)?);
+        }
+    }
+    let ignore = parse_ignore(root, options.get("ignore"))?;
+    Ok((ignore, entries))
+}
+
+fn parse_ignore(
+    root: &Path,
+    value: Option<&Value>,
+) -> Result<IgnoreRules, Box<dyn std::error::Error>> {
+    let mut patterns = GlobSetBuilder::new();
+    if let Some(value) = value {
+        let globs: Vec<String> = serde_json::from_value(value.clone())
+            .map_err(|error| format!("ghostrefs.ignore must be an array of strings: {error}"))?;
+        for pattern in globs {
+            if pattern.is_empty()
+                || Path::new(&pattern).is_absolute()
+                || pattern.split('/').any(|part| part == "..")
+            {
+                return Err(format!(
+                    "ignore pattern must be nonempty and relative to root: {pattern:?}"
+                )
+                .into());
+            }
+            let glob = GlobBuilder::new(&pattern)
+                .literal_separator(true)
+                .backslash_escape(false)
+                .build()
+                .map_err(|error| format!("invalid ignore pattern {pattern:?}: {error}"))?;
+            patterns.add(glob);
+        }
+    }
+    Ok(IgnoreRules {
+        root: root.to_path_buf(),
+        patterns: patterns.build()?,
+    })
 }
 
 fn parse_entry(root: &Path, value: &Value) -> Result<EntryPoint, Box<dyn std::error::Error>> {

@@ -1,4 +1,8 @@
-use std::{collections::HashMap, fmt, path::Path};
+use std::{
+    collections::{HashMap, VecDeque},
+    fmt,
+    path::Path,
+};
 
 use async_lsp::lsp_types::{Location, Position, SymbolKind};
 
@@ -93,6 +97,72 @@ impl Graph<'_> {
     }
 }
 
+pub struct Connections {
+    pub outgoing: Vec<Vec<NodeId>>,
+    pub consumed: Vec<bool>,
+}
+
+impl Connections {
+    pub fn new(graph: &Graph<'_>) -> Self {
+        let mut result = Self {
+            outgoing: vec![Vec::new(); graph.nodes.len()],
+            consumed: vec![false; graph.nodes.len()],
+        };
+        for edge in &graph.edges {
+            result.outgoing[edge.from.0].push(edge.to);
+            if edge.from != edge.to {
+                result.consumed[edge.to.0] = true;
+            }
+        }
+        result
+    }
+}
+
+pub struct Reachability {
+    pub reached: Vec<bool>,
+    parents: Vec<Option<NodeId>>,
+}
+
+impl Reachability {
+    pub fn walk(outgoing: &[Vec<NodeId>], roots: &[NodeId]) -> Self {
+        let mut result = Self {
+            reached: vec![false; outgoing.len()],
+            parents: vec![None; outgoing.len()],
+        };
+        let mut pending = VecDeque::new();
+        for &root in roots {
+            if !result.reached[root.0] {
+                result.reached[root.0] = true;
+                pending.push_back(root);
+            }
+        }
+        while let Some(from) = pending.pop_front() {
+            for &to in &outgoing[from.0] {
+                if !result.reached[to.0] {
+                    result.reached[to.0] = true;
+                    result.parents[to.0] = Some(from);
+                    pending.push_back(to);
+                }
+            }
+        }
+        result
+    }
+
+    pub fn chain(&self, target: NodeId) -> Vec<NodeId> {
+        if !self.reached[target.0] {
+            return Vec::new();
+        }
+        let mut chain = vec![target];
+        let mut current = target;
+        while let Some(parent) = self.parents[current.0] {
+            chain.push(parent);
+            current = parent;
+        }
+        chain.reverse();
+        chain
+    }
+}
+
 struct FileNodes {
     module: NodeId,
     symbols: Vec<NodeId>,
@@ -105,8 +175,19 @@ pub fn build(files: &[FileAnalysis]) -> Graph<'_> {
         nodes: Vec::new(),
         edges: Vec::new(),
     };
-    let mut index = HashMap::new();
+    let index = index_files(&mut graph, files);
+    add_reference_edges(&mut graph, files, &index);
+    for file in files {
+        add_class_member_edges(&mut graph, &index[file.path.as_path()]);
+    }
+    graph
+}
 
+fn index_files<'a>(
+    graph: &mut Graph<'a>,
+    files: &'a [FileAnalysis],
+) -> HashMap<&'a Path, FileNodes> {
+    let mut index = HashMap::new();
     for file in files {
         let module = NodeId(graph.nodes.len());
         graph.nodes.push(Node::Module(&file.path));
@@ -126,21 +207,19 @@ pub fn build(files: &[FileAnalysis]) -> Graph<'_> {
 
         index.insert(file.path.as_path(), FileNodes { module, symbols });
     }
+    index
+}
 
+fn add_reference_edges<'a>(
+    graph: &mut Graph<'a>,
+    files: &'a [FileAnalysis],
+    index: &HashMap<&Path, FileNodes>,
+) {
     for file in files {
         let targets = &index[file.path.as_path()];
         for (symbol, &to) in file.symbols.iter().zip(&targets.symbols) {
             for location in symbol.references.iter().flatten() {
-                let owner = location.uri.to_file_path().ok().and_then(|path| {
-                    let file_nodes = index.get(path.as_path())?;
-                    Some(owner_at(&graph, file_nodes, location.range.start))
-                });
-
-                let from = owner.unwrap_or_else(|| {
-                    let id = NodeId(graph.nodes.len());
-                    graph.nodes.push(Node::Unresolved(location));
-                    id
-                });
+                let from = reference_owner(graph, index, location);
 
                 graph.edges.push(Edge {
                     from,
@@ -150,39 +229,52 @@ pub fn build(files: &[FileAnalysis]) -> Graph<'_> {
             }
         }
     }
+}
 
-    // A class reference can construct an instance or expose any of its methods.
-    // Activate direct members conservatively: LSP references do not describe
-    // implicit __init__, descriptors, or dynamic method dispatch.
-    for file in files {
-        let file_nodes = &index[file.path.as_path()];
-        for &from in &file_nodes.symbols {
-            let Node::Symbol { symbol: class, .. } = &graph.nodes[from.0] else {
+fn reference_owner<'a>(
+    graph: &mut Graph<'a>,
+    index: &HashMap<&Path, FileNodes>,
+    location: &'a Location,
+) -> NodeId {
+    let owner = location.uri.to_file_path().ok().and_then(|path| {
+        let file_nodes = index.get(path.as_path())?;
+        Some(owner_at(graph, file_nodes, location.range.start))
+    });
+    owner.unwrap_or_else(|| {
+        let id = NodeId(graph.nodes.len());
+        graph.nodes.push(Node::Unresolved(location));
+        id
+    })
+}
+
+// A class reference can construct an instance or expose any of its methods.
+// Activate direct members conservatively: LSP references do not describe
+// implicit __init__, descriptors, or dynamic method dispatch.
+fn add_class_member_edges(graph: &mut Graph<'_>, file: &FileNodes) {
+    for &from in &file.symbols {
+        let Node::Symbol { symbol: class, .. } = &graph.nodes[from.0] else {
+            continue;
+        };
+        if class.kind != SymbolKind::CLASS {
+            continue;
+        }
+        for &to in &file.symbols {
+            let Node::Symbol { symbol: member, .. } = &graph.nodes[to.0] else {
                 continue;
             };
-            if class.kind != SymbolKind::CLASS {
-                continue;
-            }
-            for &to in &file_nodes.symbols {
-                let Node::Symbol { symbol: member, .. } = &graph.nodes[to.0] else {
-                    continue;
-                };
-                if member
-                    .qualname
-                    .rsplit_once('.')
-                    .is_some_and(|(parent, _)| parent == class.qualname)
-                {
-                    graph.edges.push(Edge {
-                        from,
-                        to,
-                        location: None,
-                    });
-                }
+            if member
+                .qualname
+                .rsplit_once('.')
+                .is_some_and(|(parent, _)| parent == class.qualname)
+            {
+                graph.edges.push(Edge {
+                    from,
+                    to,
+                    location: None,
+                });
             }
         }
     }
-
-    graph
 }
 
 fn owner_at(graph: &Graph<'_>, file: &FileNodes, position: Position) -> NodeId {
@@ -193,7 +285,7 @@ fn owner_at(graph: &Graph<'_>, file: &FileNodes, position: Position) -> NodeId {
                 return None;
             };
             // Variables and parameters are targets, not execution scopes.
-            if !is_scope(symbol.kind)
+            if !symbol.is_scope()
                 || !(symbol.range.start <= position && position < symbol.range.end)
                 // Pyright includes decorators in the declaration range. They
                 // execute in the enclosing scope, before the decorated name.
@@ -205,11 +297,4 @@ fn owner_at(graph: &Graph<'_>, file: &FileNodes, position: Position) -> NodeId {
         })
         .max_by_key(|(_, range)| (range.start, std::cmp::Reverse(range.end)))
         .map_or(file.module, |(id, _)| id)
-}
-
-fn is_scope(kind: SymbolKind) -> bool {
-    matches!(
-        kind,
-        SymbolKind::FUNCTION | SymbolKind::METHOD | SymbolKind::CLASS | SymbolKind::CONSTRUCTOR
-    )
 }

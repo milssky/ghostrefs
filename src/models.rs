@@ -24,3 +24,13 @@ pub struct SymbolAnalysis {
     pub selection_range: Range,
     pub references: Option<Vec<Location>>,
 }
+
+impl SymbolAnalysis {
+    /// Functions, methods and classes own references inside their execution scope.
+    pub fn is_scope(&self) -> bool {
+        matches!(
+            self.kind,
+            SymbolKind::FUNCTION | SymbolKind::METHOD | SymbolKind::CLASS | SymbolKind::CONSTRUCTOR
+        )
+    }
+}
