@@ -1,0 +1,161 @@
+name: Release
+
+on:
+  workflow_dispatch:
+    inputs:
+      bump:
+        description: SemVer increment
+        type: choice
+        required: true
+        default: patch
+        options:
+          - patch
+          - minor
+          - major
+  push:
+    branches: [master]
+    paths: [Cargo.toml]
+
+concurrency:
+  group: release-${{ github.event_name }}
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  prepare:
+    name: Prepare release PR
+    if: github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/master'
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    permissions:
+      contents: write
+      pull-requests: write
+    steps:
+      - uses: actions/checkout@v7.0.1
+        with:
+          ref: master
+          fetch-depth: 0
+          persist-credentials: true
+      - uses: dtolnay/rust-toolchain@683b588c487a69d01f6c6ddf40f036ff682cc2c8 # master
+        with:
+          toolchain: stable
+      - name: Install cargo-release
+        run: cargo install cargo-release --version 1.1.5 --locked
+      - name: Bump version
+        id: version
+        env:
+          BUMP: ${{ inputs.bump }}
+        run: |
+          cargo release version "$BUMP" --execute --no-confirm
+          version=$(python3 -c 'import tomllib; print(tomllib.load(open("Cargo.toml", "rb"))["package"]["version"])')
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+      - name: Open release PR
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          branch="release/v$VERSION"
+          git switch -c "$branch"
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add Cargo.toml Cargo.lock
+          git commit -m "chore: release $VERSION"
+          git push origin "$branch"
+          cat > "$RUNNER_TEMP/release-pr.md" <<EOF
+          ## Summary
+
+          Cargo.toml + Cargo.lock → $VERSION → merge → crates.io
+
+          ## Evidence
+
+          - **Before:** the version on master.
+            **After:** both manifests specify $VERSION. Required CI must pass before merge.
+
+          ## Merge Danger
+
+          **Door:** one-way. Merging publishes $VERSION to crates.io.
+
+          **Blast Radius:** release
+          EOF
+          gh pr create --base master --head "$branch" \
+            --title "chore: release $VERSION" --body-file "$RUNNER_TEMP/release-pr.md"
+
+  version:
+    name: Detect version change
+    if: github.event_name == 'push'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      changed: ${{ steps.version.outputs.changed }}
+      version: ${{ steps.version.outputs.version }}
+    steps:
+      - uses: actions/checkout@v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Compare package versions
+        id: version
+        env:
+          BEFORE: ${{ github.event.before }}
+        run: |
+          python3 - <<'PYTHON'
+          import os
+          import subprocess
+          import tomllib
+
+          old_manifest = subprocess.check_output(
+              ["git", "show", f"{os.environ['BEFORE']}:Cargo.toml"], text=True
+          )
+          old = tomllib.loads(old_manifest)["package"]["version"]
+          with open("Cargo.toml", "rb") as manifest:
+              new = tomllib.load(manifest)["package"]["version"]
+          with open(os.environ["GITHUB_OUTPUT"], "a") as output:
+              output.write(f"changed={str(old != new).lower()}\nversion={new}\n")
+          PYTHON
+
+  publish:
+    name: Publish to crates.io
+    needs: version
+    if: needs.version.outputs.changed == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    environment: crates-io
+    permissions:
+      contents: write
+      id-token: write
+    steps:
+      - uses: actions/checkout@v7.0.1
+        with:
+          fetch-depth: 0
+          # Push only the release tag; master is updated through the release PR.
+          persist-credentials: true
+      - uses: dtolnay/rust-toolchain@683b588c487a69d01f6c6ddf40f036ff682cc2c8 # master
+        with:
+          toolchain: stable
+          components: rustfmt, clippy
+      - name: Check formatting
+        run: cargo fmt --all -- --check
+      - name: Run Clippy
+        run: cargo clippy --locked --all-targets --all-features -- -D warnings
+      - name: Run tests
+        run: cargo test --locked --all-features
+      - name: Verify package
+        run: cargo publish --locked --dry-run
+      - name: Authenticate with crates.io
+        id: auth
+        uses: rust-lang/crates-io-auth-action@v1
+      - name: Publish
+        env:
+          CARGO_REGISTRY_TOKEN: ${{ steps.auth.outputs.token }}
+        run: cargo publish --locked
+      - name: Tag published version
+        env:
+          VERSION: ${{ needs.version.outputs.version }}
+        run: |
+          git tag "v$VERSION"
+          git push origin "refs/tags/v$VERSION"
