@@ -9,8 +9,9 @@ use async_lsp::{
     lsp_types::{
         ClientCapabilities, DidChangeConfigurationParams, DidOpenTextDocumentParams,
         DocumentSymbolClientCapabilities, DocumentSymbolParams, DocumentSymbolResponse,
-        InitializeParams, InitializedParams, TextDocumentClientCapabilities,
-        TextDocumentIdentifier, TextDocumentItem, Url, WorkspaceFolder,
+        InitializeParams, InitializedParams, Location, Position, ReferenceContext, ReferenceParams,
+        TextDocumentClientCapabilities, TextDocumentIdentifier, TextDocumentItem,
+        TextDocumentPositionParams, Url, WorkspaceFolder,
     },
     router::Router,
 };
@@ -18,6 +19,7 @@ use tokio::{process::Child, process::Command, task::JoinHandle};
 use tokio_util::compat::{TokioAsyncReadCompatExt, TokioAsyncWriteCompatExt};
 
 use crate::language::Language;
+use crate::models::{FileAnalysis, SymbolAnalysis};
 
 type Error = Box<dyn std::error::Error>;
 
@@ -126,6 +128,32 @@ impl LspSession {
         Ok(symbols)
     }
 
+    pub async fn references(
+        &mut self,
+        path: &Path,
+        position: Position,
+    ) -> Result<Option<Vec<Location>>, Error> {
+        let path = path.canonicalize()?;
+        let uri = Url::from_file_path(&path)
+            .map_err(|_| format!("invalid file path: {}", path.display()))?;
+
+        let references = self
+            .server
+            .references(ReferenceParams {
+                text_document_position: TextDocumentPositionParams {
+                    text_document: TextDocumentIdentifier { uri },
+                    position,
+                },
+                context: ReferenceContext {
+                    include_declaration: false,
+                },
+                work_done_progress_params: Default::default(),
+                partial_result_params: Default::default(),
+            })
+            .await?;
+        Ok(references)
+    }
+
     pub async fn shutdown(mut self) -> Result<(), Error> {
         self.server.shutdown(()).await?;
         self.server.exit(())?;
@@ -145,16 +173,14 @@ impl LspSession {
     }
 }
 
-#[derive(Debug)]
-pub struct FileSymbols {
-    pub path: PathBuf,
-    pub symbols: Option<DocumentSymbolResponse>,
-}
-
-pub fn run(root: &Path, files: &[PathBuf]) -> Result<Vec<FileSymbols>, Error> {
+pub fn run(
+    root: &Path,
+    files: &[PathBuf],
+    settings: &serde_json::Value,
+) -> Result<Vec<FileAnalysis>, Error> {
     let language = Language::detect(files)?;
 
-    let config = language.lsp_config()?;
+    let config = language.lsp_config();
     let runtime = tokio::runtime::Builder::new_current_thread()
         .enable_all()
         .build()?;
@@ -162,8 +188,8 @@ pub fn run(root: &Path, files: &[PathBuf]) -> Result<Vec<FileSymbols>, Error> {
     runtime.block_on(async {
         let mut session = LspSession::start(root, config.command, config.args).await?;
 
-        let analysis: Result<Vec<FileSymbols>, Error> = async {
-            session.configure(config.settings)?;
+        let analysis: Result<Vec<FileAnalysis>, Error> = async {
+            session.configure(settings.clone())?;
 
             for file in files {
                 session.open_document(file, config.language_id).await?;
@@ -172,9 +198,64 @@ pub fn run(root: &Path, files: &[PathBuf]) -> Result<Vec<FileSymbols>, Error> {
             let mut results = Vec::new();
 
             for file in files {
-                let symbols = session.document_symbols(file).await?;
+                let mut symbols = Vec::new();
+                match session.document_symbols(file).await? {
+                    Some(DocumentSymbolResponse::Nested(declarations)) => {
+                        let mut pending: Vec<_> = declarations
+                            .into_iter()
+                            .rev()
+                            .map(|symbol| (symbol, String::new()))
+                            .collect();
 
-                results.push(FileSymbols {
+                        while let Some((symbol, parent)) = pending.pop() {
+                            let references = session
+                                .references(file, symbol.selection_range.start)
+                                .await?;
+
+                            let qualname = if parent.is_empty() {
+                                symbol.name.clone()
+                            } else {
+                                format!("{parent}.{}", symbol.name)
+                            };
+
+                            if let Some(children) = symbol.children {
+                                pending.extend(
+                                    children
+                                        .into_iter()
+                                        .rev()
+                                        .map(|child| (child, qualname.clone())),
+                                );
+                            }
+
+                            symbols.push(SymbolAnalysis {
+                                name: symbol.name,
+                                qualname,
+                                kind: symbol.kind,
+                                range: symbol.range,
+                                selection_range: symbol.selection_range,
+                                references,
+                            });
+                        }
+                    }
+                    Some(DocumentSymbolResponse::Flat(declarations)) if declarations.is_empty() => {
+                    }
+                    Some(DocumentSymbolResponse::Flat(_)) => {
+                        return Err(format!(
+                            "expected hierarchical document symbols for {}",
+                            file.display()
+                        )
+                        .into());
+                    }
+                    None => {
+                        return Err(format!(
+                            "language server returned no document-symbol result for {}",
+                            file.display()
+                        )
+                        .into());
+                    }
+                }
+
+                results.push(FileAnalysis {
                     path: file.clone(),
                     symbols,
                 });
