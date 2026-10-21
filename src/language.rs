@@ -1,7 +1,5 @@
 use std::path::{Path, PathBuf};
 
-const DEFAULT_LSP_SETTINGS: &str = include_str!("../ghostrefs-lsp.json");
-
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Language {
     Python,
@@ -11,7 +9,6 @@ pub struct LspConfig {
     pub command: &'static str,
     pub args: &'static [&'static str],
     pub language_id: &'static str,
-    pub settings: serde_json::Value,
 }
 
 impl Language {
@@ -42,14 +39,13 @@ impl Language {
         }
     }
 
-    pub fn lsp_config(self) -> Result<LspConfig, serde_json::Error> {
-        Ok(match self {
+    pub fn lsp_config(self) -> LspConfig {
+        match self {
             Self::Python => LspConfig {
                 command: "pyright-langserver",
                 args: &["--stdio"],
                 language_id: "python",
-                settings: serde_json::from_str(DEFAULT_LSP_SETTINGS)?,
             },
-        })
+        }
     }
 }

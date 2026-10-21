@@ -1,4 +1,8 @@
 {
+  "ghostrefs": {
+    "ignore": [],
+    "production_entrypoints": []
+  },
   "python": {
     "analysis": {
       "exclude": [

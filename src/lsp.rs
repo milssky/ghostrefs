@@ -8,9 +8,10 @@ use async_lsp::{
     LanguageServer, MainLoop, ServerSocket,
     lsp_types::{
         ClientCapabilities, DidChangeConfigurationParams, DidOpenTextDocumentParams,
-        DocumentSymbolClientCapabilities, DocumentSymbolParams, DocumentSymbolResponse,
-        InitializeParams, InitializedParams, TextDocumentClientCapabilities,
-        TextDocumentIdentifier, TextDocumentItem, Url, WorkspaceFolder,
+        DocumentSymbol, DocumentSymbolClientCapabilities, DocumentSymbolParams,
+        DocumentSymbolResponse, InitializeParams, InitializedParams, Location, Position,
+        ReferenceContext, ReferenceParams, TextDocumentClientCapabilities, TextDocumentIdentifier,
+        TextDocumentItem, TextDocumentPositionParams, Url, WorkspaceFolder,
     },
     router::Router,
 };
@@ -18,6 +19,7 @@ use tokio::{process::Child, process::Command, task::JoinHandle};
 use tokio_util::compat::{TokioAsyncReadCompatExt, TokioAsyncWriteCompatExt};
 
 use crate::language::Language;
+use crate::models::{FileAnalysis, SymbolAnalysis};
 
 type Error = Box<dyn std::error::Error>;
 
@@ -89,8 +91,7 @@ impl LspSession {
 
     pub async fn open_document(&mut self, path: &Path, language_id: &str) -> Result<(), Error> {
         let path = path.canonicalize()?;
-        let uri = Url::from_file_path(&path)
-            .map_err(|_| format!("invalid file path: {}", path.display()))?;
+        let uri = file_uri(&path)?;
 
         let text = tokio::fs::read_to_string(&path).await?;
 
@@ -110,9 +111,7 @@ impl LspSession {
         &mut self,
         path: &Path,
     ) -> Result<Option<DocumentSymbolResponse>, Error> {
-        let path = path.canonicalize()?;
-        let uri = Url::from_file_path(&path)
-            .map_err(|_| format!("invalid file path: {}", path.display()))?;
+        let uri = file_uri(&path.canonicalize()?)?;
 
         let symbols = self
             .server
@@ -124,6 +123,79 @@ impl LspSession {
             .await?;
 
         Ok(symbols)
+    }
+
+    pub async fn references(
+        &mut self,
+        path: &Path,
+        position: Position,
+    ) -> Result<Option<Vec<Location>>, Error> {
+        let uri = file_uri(&path.canonicalize()?)?;
+
+        let references = self
+            .server
+            .references(ReferenceParams {
+                text_document_position: TextDocumentPositionParams {
+                    text_document: TextDocumentIdentifier { uri },
+                    position,
+                },
+                context: ReferenceContext {
+                    include_declaration: false,
+                },
+                work_done_progress_params: Default::default(),
+                partial_result_params: Default::default(),
+            })
+            .await?;
+        Ok(references)
+    }
+
+    async fn collect_files(
+        &mut self,
+        files: &[PathBuf],
+        language_id: &str,
+        settings: &serde_json::Value,
+    ) -> Result<Vec<FileAnalysis>, Error> {
+        self.configure(settings.clone())?;
+        // Open every document before requesting references across the workspace.
+        for file in files {
+            self.open_document(file, language_id).await?;
+        }
+        let mut results = Vec::new();
+        for file in files {
+            results.push(self.collect_file(file).await?);
+        }
+        Ok(results)
+    }
+
+    async fn collect_file(&mut self, path: &Path) -> Result<FileAnalysis, Error> {
+        let declarations = match self.document_symbols(path).await? {
+            Some(DocumentSymbolResponse::Nested(declarations)) => declarations,
+            Some(DocumentSymbolResponse::Flat(declarations)) if declarations.is_empty() => {
+                Vec::new()
+            }
+            Some(DocumentSymbolResponse::Flat(_)) => {
+                return Err(format!(
+                    "expected hierarchical document symbols for {}",
+                    path.display()
+                )
+                .into());
+            }
+            None => {
+                return Err(format!(
+                    "language server returned no document-symbol result for {}",
+                    path.display()
+                )
+                .into());
+            }
+        };
+        let mut symbols = flatten_symbols(declarations);
+        for symbol in &mut symbols {
+            symbol.references = self.references(path, symbol.selection_range.start).await?;
+        }
+        Ok(FileAnalysis {
+            path: path.to_path_buf(),
+            symbols,
+        })
     }
 
     pub async fn shutdown(mut self) -> Result<(), Error> {
@@ -145,16 +217,14 @@ impl LspSession {
     }
 }
 
-#[derive(Debug)]
-pub struct FileSymbols {
-    pub path: PathBuf,
-    pub symbols: Option<DocumentSymbolResponse>,
-}
-
-pub fn run(root: &Path, files: &[PathBuf]) -> Result<Vec<FileSymbols>, Error> {
+pub fn run(
+    root: &Path,
+    files: &[PathBuf],
+    settings: &serde_json::Value,
+) -> Result<Vec<FileAnalysis>, Error> {
     let language = Language::detect(files)?;
 
-    let config = language.lsp_config()?;
+    let config = language.lsp_config();
     let runtime = tokio::runtime::Builder::new_current_thread()
         .enable_all()
         .build()?;
@@ -162,28 +232,9 @@ pub fn run(root: &Path, files: &[PathBuf]) -> Result<Vec<FileSymbols>, Error> {
     runtime.block_on(async {
         let mut session = LspSession::start(root, config.command, config.args).await?;
 
-        let analysis: Result<Vec<FileSymbols>, Error> = async {
-            session.configure(config.settings)?;
-
-            for file in files {
-                session.open_document(file, config.language_id).await?;
-            }
-
-            let mut results = Vec::new();
-
-            for file in files {
-                let symbols = session.document_symbols(file).await?;
-
-                results.push(FileSymbols {
-                    path: file.clone(),
-                    symbols,
-                });
-            }
-
-            Ok(results)
-        }
-        .await;
-
+        let analysis = session
+            .collect_files(files, config.language_id, settings)
+            .await;
         let shutdown = session.shutdown().await;
 
         let results = analysis?;
@@ -191,4 +242,42 @@ pub fn run(root: &Path, files: &[PathBuf]) -> Result<Vec<FileSymbols>, Error> {
 
         Ok(results)
     })
+}
+
+fn file_uri(path: &Path) -> Result<Url, Error> {
+    Url::from_file_path(path).map_err(|_| format!("invalid file path: {}", path.display()).into())
+}
+
+/// Preserve declaration order while flattening nested names in depth-first order.
+fn flatten_symbols(declarations: Vec<DocumentSymbol>) -> Vec<SymbolAnalysis> {
+    let mut pending: Vec<_> = declarations
+        .into_iter()
+        .rev()
+        .map(|symbol| (symbol, String::new()))
+        .collect();
+    let mut symbols = Vec::new();
+    while let Some((symbol, parent)) = pending.pop() {
+        let qualname = if parent.is_empty() {
+            symbol.name.clone()
+        } else {
+            format!("{parent}.{}", symbol.name)
+        };
+        if let Some(children) = symbol.children {
+            pending.extend(
+                children
+                    .into_iter()
+                    .rev()
+                    .map(|child| (child, qualname.clone())),
+            );
+        }
+        symbols.push(SymbolAnalysis {
+            name: symbol.name,
+            qualname,
+            kind: symbol.kind,
+            range: symbol.range,
+            selection_range: symbol.selection_range,
+            references: None,
+        });
+    }
+    symbols
 }

@@ -19,6 +19,10 @@ pub struct Cli {
     /// Verbose level
     #[arg(short, long)]
     pub verbose: bool,
+
+    /// Print usage graph edges instead of direct usage statuses
+    #[arg(long)]
+    pub graph: bool,
 }
 
 impl Cli {
@@ -26,6 +30,10 @@ impl Cli {
         self.root = resolve_directory(&self.root)?;
         self.source = resolve_directory(&self.root.join(&self.source))?;
         self.tests = resolve_directory(&self.root.join(&self.tests))?;
+
+        if self.source.starts_with(&self.tests) {
+            return Err("production source must not be inside the test directory".into());
+        }
 
         Ok(self)
     }

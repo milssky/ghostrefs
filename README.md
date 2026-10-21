@@ -1,13 +1,49 @@
-ghostrefs находит символы, единственными известными потребителями которых являются тесты.
+<h1 align="center">ghostrefs</h1>
 
-Сейчас реализован сбор символов через LSP для Python. Для запуска нужен
-`pyright-langserver` в `PATH`.
+<p align="center">
+  <em>Find code kept alive only by tests.</em>
+</p>
 
-```sh
-cargo run -- --root . --source fixtures/python/project --tests fixtures/python/tests
+## Features
+
+- [x] Finds production symbols whose only known consumers are tests
+- [x] Follows transitive dependencies, including `test → helper → target`
+- [x] Uses language server references to build a usage graph
+- [x] Explains findings with reference locations and test chains
+- [x] Supports custom production entry points and ignore patterns
+- [x] Written in Rust, currently supports Python via Pyright
+
+## Installation
+
+Requires Rust with Cargo and `pyright-langserver` in your `PATH`.
+
+Install from [crates.io](https://crates.io/crates/ghostrefs):
+
+```bash
+npm install -g pyright
+cargo install ghostrefs
 ```
 
-Сканер рекурсивно находит Python-файлы, затем LSP открывает их и возвращает
-объявления через `textDocument/documentSymbol`. Результат пока выводится в консоль.
-Настройки сервера находятся в `ghostrefs-lsp.json`. Сбор ссылок и анализ графа
-пока не реализованы.
+## Example
+
+From a checkout of this repository, run against the included sample project:
+
+```bash
+ghostrefs --root . --source fixtures/python/project --tests fixtures/python/tests
+```
+
+```text
+TestOnly …/main.py:6:5 test_only_used_func (Function)
+TestOnly …/main.py:14:7 TestOnlyUsedClass (Class)
+TestOnly candidates: 2 (6 production symbols analyzed)
+```
+
+For your own project, set `--root` to the directory matching your Python imports.
+The `--source` and `--tests` paths are relative to that root.
+
+Add `--verbose` to see why a symbol was flagged, or `--graph` to inspect the usage graph.
+Configure ignore patterns, production entry points, and Pyright settings in
+`ghostrefs-lsp.json` at the project root.
+
+Findings are candidates for review: dynamic imports, reflection, and external
+consumers may be invisible to the language server.
