@@ -17,16 +17,16 @@
 
 Requires Rust with Cargo and `pyright-langserver` in your `PATH`.
 
+Install from [crates.io](https://crates.io/crates/ghostrefs):
+
 ```bash
 npm install -g pyright
-git clone https://github.com/milssky/ghostrefs.git
-cd ghostrefs
-cargo install --path .
+cargo install ghostrefs
 ```
 
 ## Example
 
-Run against the included sample project:
+From a checkout of this repository, run against the included sample project:
 
 ```bash
 ghostrefs --root . --source fixtures/python/project --tests fixtures/python/tests
@@ -47,7 +47,3 @@ Configure ignore patterns, production entry points, and Pyright settings in
 
 Findings are candidates for review: dynamic imports, reflection, and external
 consumers may be invisible to the language server.
-
-## License
-
-MIT
