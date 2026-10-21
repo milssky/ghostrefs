@@ -1,0 +1,15 @@
+/* Let the documentation layout and theme controls follow Shibuya defaults. */
+.sy-head-brand img {
+  width: 2.25rem;
+  height: 2.25rem;
+  object-fit: contain;
+}
+
+/* Invert RGB for the light theme; the PNG's alpha stays transparent. */
+.sy-head-brand .light-logo {
+  filter: invert(1);
+}
+
+.highlight pre {
+  tab-size: 4;
+}
