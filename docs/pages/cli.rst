@@ -45,14 +45,15 @@ Output options
    * - Option
      - Meaning
    * - ``-v, --verbose``
-     - Print collection progress to stderr; add roots, references, and test
-       chains to the normal report on stdout.
+     - Add roots, references, and test chains to the normal report on stdout.
    * - ``--graph``
      - Print usage graph edges in place of the findings report.
    * - ``-h, --help``
      - Show usage and options.
    * - ``-V, --version``
      - Show the installed version.
+
+Collection progress is always printed to stderr, including in graph mode.
 
 Normal report
 -------------
@@ -101,8 +102,8 @@ can contain this edge (paths and positions depend on your project):
 members. ``::<module>`` identifies module-level code and ``::<unresolved>``
 means a reference could not be assigned to a collected owner.
 
-When combined with ``--verbose``, graph mode still prints collection progress
-to stderr, but does not print roots, test chains, or the findings summary.
+Graph mode prints collection progress to stderr. ``--verbose`` does not add
+roots, test chains, or the findings summary in graph mode.
 Graph mode builds the graph without running entry-point resolution or usage
 classification.
 

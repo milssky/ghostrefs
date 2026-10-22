@@ -83,8 +83,8 @@ ignore rules and Pyright settings.
 Large workspace scans are slow
 ------------------------------
 
-Use ``--verbose`` to see the number of collected symbols, reference requests,
-and elapsed time while requests are processed. Reference searches in Pyright
+Collection progress always shows the number of collected symbols, reference
+requests, and elapsed time on stderr. Reference searches in Pyright
 usually dominate scan time; rebuilding Ghostrefs in release mode alone may
 have little effect on that work.
 

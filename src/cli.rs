@@ -17,7 +17,7 @@ pub struct Cli {
     #[arg(short, long)]
     pub tests: PathBuf,
 
-    /// Verbose level.
+    /// Include analysis roots, references, and test chains in the report.
     #[arg(short, long)]
     pub verbose: bool,
 

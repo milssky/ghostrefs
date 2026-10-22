@@ -11,7 +11,7 @@ use std::{
 };
 
 use crate::{
-    cli::{Cli, Verbosity},
+    cli::Cli,
     lsp::{LspSession, file_uri},
 };
 use async_lsp::lsp_types::{DocumentSymbol, DocumentSymbolResponse};
@@ -42,7 +42,7 @@ pub fn run(
     let runtime = Builder::new_current_thread().enable_all().build()?;
     runtime.block_on(async {
         let mut session = start_session(&cli.root, files, settings).await?;
-        let collected = collect_files(&mut session, files, mode, cli.verbosity()).await;
+        let collected = collect_files(&mut session, files, mode).await;
         let shutdown = session.shutdown().await;
         let analyses = collected?;
         shutdown?;
@@ -54,7 +54,6 @@ async fn collect_files(
     session: &mut LspSession,
     files: &[PathBuf],
     mode: ReferenceMode<'_>,
-    verbosity: Verbosity,
 ) -> Result<Vec<FileAnalysis>> {
     let started = Instant::now();
     let mut analyses = Vec::new();
@@ -62,13 +61,11 @@ async fn collect_files(
         analyses.push(collect_file(session, file).await?);
     }
     let total: usize = analyses.iter().map(|file| file.symbols.len()).sum();
-    if verbosity.is_verbose() {
-        eprintln!(
-            "Collected {total} symbols in {:.2}s",
-            started.elapsed().as_secs_f64()
-        );
-    }
-    collect_references(session, &mut analyses, mode, verbosity).await?;
+    eprintln!(
+        "Collected {total} symbols in {:.2}s",
+        started.elapsed().as_secs_f64()
+    );
+    collect_references(session, &mut analyses, mode).await?;
     Ok(analyses)
 }
 
@@ -76,9 +73,8 @@ async fn collect_references(
     session: &mut LspSession,
     analyses: &mut [FileAnalysis],
     mode: ReferenceMode<'_>,
-    verbosity: Verbosity,
 ) -> Result<()> {
-    let mut progress = ReferenceProgress::new(analyses, verbosity);
+    let mut progress = ReferenceProgress::new(analyses);
     let mut queried = query_flags(analyses);
     loop {
         let needed = needed_references(analyses, mode);
@@ -161,48 +157,40 @@ struct ReferenceProgress {
     total: usize,
     completed: usize,
     started: Instant,
-    verbosity: Verbosity,
 }
 
 impl ReferenceProgress {
-    fn new(analyses: &[FileAnalysis], verbosity: Verbosity) -> Self {
+    fn new(analyses: &[FileAnalysis]) -> Self {
         Self {
             total: analyses.iter().map(|file| file.symbols.len()).sum(),
             completed: 0,
             started: Instant::now(),
-            verbosity,
         }
     }
 
     fn requesting(&self, count: usize) {
-        if self.verbosity.is_verbose() {
-            eprintln!(
-                "Requesting {count} references ({} completed, {} total symbols)",
-                self.completed, self.total
-            );
-        }
+        eprintln!(
+            "Requesting {count} references ({} completed, {} total symbols)",
+            self.completed, self.total
+        );
     }
 
     fn report_round(&self) {
-        if self.verbosity.is_verbose() {
-            eprintln!(
-                "References: {}/{} in {:.2}s",
-                self.completed,
-                self.total,
-                self.started.elapsed().as_secs_f64()
-            );
-        }
+        eprintln!(
+            "References: {}/{} in {:.2}s",
+            self.completed,
+            self.total,
+            self.started.elapsed().as_secs_f64()
+        );
     }
 
     fn finish(&self) {
-        if self.verbosity.is_verbose() {
-            eprintln!(
-                "Collected {}/{} reference results in {:.2}s",
-                self.completed,
-                self.total,
-                self.started.elapsed().as_secs_f64()
-            );
-        }
+        eprintln!(
+            "Collected {}/{} reference results in {:.2}s",
+            self.completed,
+            self.total,
+            self.started.elapsed().as_secs_f64()
+        );
     }
 }
 

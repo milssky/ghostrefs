@@ -39,9 +39,7 @@ fn main() -> Result<()> {
 fn collect_workspace(cli: &cli::Cli, config: &config::Config) -> Result<Vec<models::FileAnalysis>> {
     let paths = scan::scan_workspace(&cli.root, &cli.source, &cli.tests)?;
 
-    if cli.verbose {
-        eprintln!("Collecting LSP symbols from {} files", paths.len());
-    }
+    eprintln!("Collecting LSP symbols from {} files", paths.len());
 
     collect::run(cli, &paths, &config.lsp_settings, cli.reference_mode())
 }
