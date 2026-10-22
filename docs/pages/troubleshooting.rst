@@ -88,6 +88,8 @@ and elapsed time while requests are processed. Reference searches in Pyright
 usually dominate scan time; rebuilding Ghostrefs in release mode alone may
 have little effect on that work.
 
+Ghostrefs uses a single Pyright process and sends reference requests sequentially.
+
 Normal reports follow references backwards from production declarations and
 skip searches for declarations with no path to a reportable symbol. This
 includes nested variables and attributes, which cannot own dependencies.

@@ -1,81 +1,49 @@
-use std::{ops::ControlFlow, path::Path, process::Stdio};
+use crate::Result;
+use std::{future::ready, ops::ControlFlow, path::Path, process::Stdio};
 
 use async_lsp::{
-    LanguageServer, MainLoop, ServerSocket,
+    Error as LspError, LanguageServer as _, MainLoop, ServerSocket,
     lsp_types::{
         ClientCapabilities, DiagnosticClientCapabilities, DidChangeConfigurationParams,
         DidOpenTextDocumentParams, DocumentSymbolClientCapabilities, DocumentSymbolParams,
-        DocumentSymbolResponse, InitializeParams, InitializedParams, Location, Position,
-        ReferenceContext, ReferenceParams, TextDocumentClientCapabilities, TextDocumentIdentifier,
-        TextDocumentItem, TextDocumentPositionParams, Url, WorkspaceFolder,
+        DocumentSymbolResponse, InitializeParams, InitializedParams, Location, PartialResultParams,
+        Position, ReferenceContext, ReferenceParams, TextDocumentClientCapabilities,
+        TextDocumentIdentifier, TextDocumentItem, TextDocumentPositionParams, Url,
+        WorkDoneProgressParams, WorkspaceFolder,
         request::{RegisterCapability, UnregisterCapability, WorkspaceDiagnosticRefresh},
     },
     router::Router,
 };
-use tokio::{process::Child, process::Command, task::JoinHandle};
-use tokio_util::compat::{TokioAsyncReadCompatExt, TokioAsyncWriteCompatExt};
+use std::process;
+use tokio::{
+    fs::{canonicalize, read_to_string},
+    process::Child,
+    process::Command,
+    task::JoinHandle,
+};
 
-type Error = Box<dyn std::error::Error>;
+pub(crate) type References = Option<Vec<Location>>;
+type IoTask = JoinHandle<Result<(), LspError>>;
+use tokio_util::compat::{TokioAsyncReadCompatExt as _, TokioAsyncWriteCompatExt as _};
 
-pub struct LspSession {
+pub(crate) struct LspSession {
     server: ServerSocket,
     child: Child,
-    io_task: JoinHandle<Result<(), async_lsp::Error>>,
+    io_task: IoTask,
 }
 
 impl LspSession {
-    pub async fn start(root: &Path, command: &str, args: &[&str]) -> Result<Self, Error> {
-        let root = tokio::fs::canonicalize(root).await?;
-        let mut child = Command::new(command)
-            .args(args)
-            .current_dir(&root)
-            .stdin(Stdio::piped())
-            .stdout(Stdio::piped())
-            .kill_on_drop(true)
-            .spawn()?;
-
-        let (mainloop, mut server) = MainLoop::new_client(|_| {
-            let mut router = Router::new(());
-            router.request::<RegisterCapability, _>(|_, _| async { Ok(()) });
-            router.request::<UnregisterCapability, _>(|_, _| async { Ok(()) });
-            router.request::<WorkspaceDiagnosticRefresh, _>(|_, _| async { Ok(()) });
-            router.unhandled_notification(|_, _| ControlFlow::Continue(()));
-            router
-        });
-
-        let stdout = child.stdout.take().unwrap();
-        let stdin = child.stdin.take().unwrap();
-        let io_task = tokio::spawn(async move {
-            mainloop
-                .run_buffered(stdout.compat(), stdin.compat_write())
-                .await
-        });
-
-        server
-            .initialize(InitializeParams {
-                process_id: Some(std::process::id()),
-                capabilities: ClientCapabilities {
-                    text_document: Some(TextDocumentClientCapabilities {
-                        // We only need symbols and references. Pull diagnostics keep
-                        // Pyright from type-checking every opened file in the background.
-                        diagnostic: Some(DiagnosticClientCapabilities {
-                            dynamic_registration: Some(true),
-                            ..Default::default()
-                        }),
-                        document_symbol: Some(DocumentSymbolClientCapabilities {
-                            hierarchical_document_symbol_support: Some(true),
-                            ..Default::default()
-                        }),
-                        ..Default::default()
-                    }),
-                    ..Default::default()
-                },
-                workspace_folders: Some(vec![WorkspaceFolder {
-                    uri: Url::from_directory_path(&root).unwrap(),
-                    name: "workspace".into(),
-                }]),
-                ..Default::default()
-            })
+    #[expect(
+        clippy::future_not_send,
+        reason = "LSP initialization runs on a current-thread runtime"
+    )]
+    pub(crate) async fn start(root: &Path, command: &str, arguments: &[&str]) -> Result<Self> {
+        let workspace_root = canonicalize(root).await?;
+        let mut child = spawn_server(&workspace_root, command, arguments)?;
+        let (mainloop, mut server) = MainLoop::new_client(client_router);
+        let io_task = start_io(mainloop, &mut child)?;
+        let _ = server
+            .initialize(initialize_params(&workspace_root)?)
             .await?;
         server.initialized(InitializedParams {})?;
 
@@ -86,17 +54,17 @@ impl LspSession {
         })
     }
 
-    pub fn configure(&mut self, settings: serde_json::Value) -> Result<(), Error> {
+    pub(crate) fn configure(&mut self, settings: serde_json::Value) -> Result<()> {
         self.server
             .did_change_configuration(DidChangeConfigurationParams { settings })?;
         Ok(())
     }
 
-    pub async fn open_document(&mut self, path: &Path, language_id: &str) -> Result<(), Error> {
-        let path = path.canonicalize()?;
-        let uri = file_uri(&path)?;
+    pub(crate) async fn open_document(&mut self, path: &Path, language_id: &str) -> Result<()> {
+        let canonical_path = path.canonicalize()?;
+        let uri = file_uri(&canonical_path)?;
 
-        let text = tokio::fs::read_to_string(&path).await?;
+        let text = read_to_string(&canonical_path).await?;
 
         self.server.did_open(DidOpenTextDocumentParams {
             text_document: TextDocumentItem {
@@ -110,29 +78,25 @@ impl LspSession {
         Ok(())
     }
 
-    pub async fn document_symbols(
+    pub(crate) async fn document_symbols(
         &mut self,
         path: &Path,
-    ) -> Result<Option<DocumentSymbolResponse>, Error> {
+    ) -> Result<Option<DocumentSymbolResponse>> {
         let uri = file_uri(&path.canonicalize()?)?;
 
         let symbols = self
             .server
             .document_symbol(DocumentSymbolParams {
                 text_document: TextDocumentIdentifier { uri },
-                work_done_progress_params: Default::default(),
-                partial_result_params: Default::default(),
+                work_done_progress_params: WorkDoneProgressParams::default(),
+                partial_result_params: PartialResultParams::default(),
             })
             .await?;
 
         Ok(symbols)
     }
 
-    pub async fn references(
-        &mut self,
-        uri: Url,
-        position: Position,
-    ) -> Result<Option<Vec<Location>>, Error> {
+    pub(crate) async fn references(&mut self, uri: Url, position: Position) -> Result<References> {
         let references = self
             .server
             .references(ReferenceParams {
@@ -143,14 +107,14 @@ impl LspSession {
                 context: ReferenceContext {
                     include_declaration: false,
                 },
-                work_done_progress_params: Default::default(),
-                partial_result_params: Default::default(),
+                work_done_progress_params: WorkDoneProgressParams::default(),
+                partial_result_params: PartialResultParams::default(),
             })
             .await?;
         Ok(references)
     }
 
-    pub async fn shutdown(mut self) -> Result<(), Error> {
+    pub(crate) async fn shutdown(mut self) -> Result<()> {
         self.server.shutdown(()).await?;
         self.server.exit(())?;
 
@@ -161,7 +125,7 @@ impl LspSession {
         }
 
         match self.io_task.await? {
-            Ok(()) | Err(async_lsp::Error::Eof) => {}
+            Ok(()) | Err(LspError::Eof) => {}
             Err(error) => return Err(error.into()),
         }
 
@@ -169,6 +133,71 @@ impl LspSession {
     }
 }
 
-pub fn file_uri(path: &Path) -> Result<Url, Error> {
-    Url::from_file_path(path).map_err(|_| format!("invalid file path: {}", path.display()).into())
+pub(crate) fn file_uri(path: &Path) -> Result<Url> {
+    Url::from_file_path(path).map_err(|()| format!("invalid file path: {}", path.display()).into())
+}
+
+fn spawn_server(root: &Path, command: &str, arguments: &[&str]) -> Result<Child> {
+    Ok(Command::new(command)
+        .args(arguments)
+        .current_dir(root)
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .kill_on_drop(true)
+        .spawn()?)
+}
+
+fn client_router(_: ServerSocket) -> Router<()> {
+    let mut router = Router::new(());
+    let _ = router.request::<RegisterCapability, _>(|(), _| ready(Ok(())));
+    let _ = router.request::<UnregisterCapability, _>(|(), _| ready(Ok(())));
+    let _ = router.request::<WorkspaceDiagnosticRefresh, _>(|(), ()| ready(Ok(())));
+    let _ = router.unhandled_notification(|(), _| ControlFlow::Continue(()));
+    router
+}
+
+fn initialize_params(root: &Path) -> Result<InitializeParams> {
+    Ok(InitializeParams {
+        process_id: Some(process::id()),
+        capabilities: ClientCapabilities {
+            text_document: Some(document_capabilities()),
+            ..ClientCapabilities::default()
+        },
+        workspace_folders: Some(vec![WorkspaceFolder {
+            uri: Url::from_directory_path(root).map_err(|()| "invalid workspace directory")?,
+            name: "workspace".into(),
+        }]),
+        ..InitializeParams::default()
+    })
+}
+
+fn document_capabilities() -> TextDocumentClientCapabilities {
+    // Pull diagnostics prevent background type-checking of every opened file.
+    TextDocumentClientCapabilities {
+        diagnostic: Some(DiagnosticClientCapabilities {
+            dynamic_registration: Some(true),
+            ..DiagnosticClientCapabilities::default()
+        }),
+        document_symbol: Some(DocumentSymbolClientCapabilities {
+            hierarchical_document_symbol_support: Some(true),
+            ..DocumentSymbolClientCapabilities::default()
+        }),
+        ..TextDocumentClientCapabilities::default()
+    }
+}
+
+fn start_io(mainloop: MainLoop<Router<()>>, child: &mut Child) -> Result<IoTask> {
+    let stdout = child
+        .stdout
+        .take()
+        .ok_or("language server stdout was not piped")?;
+    let stdin = child
+        .stdin
+        .take()
+        .ok_or("language server stdin was not piped")?;
+    Ok(tokio::spawn(async move {
+        mainloop
+            .run_buffered(stdout.compat(), stdin.compat_write())
+            .await
+    }))
 }

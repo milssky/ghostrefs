@@ -52,6 +52,8 @@ Add `--verbose` to see why a symbol was flagged, or `--graph` to inspect the usa
 Configure ignore patterns, production entry points, and Pyright settings in
 `ghostrefs-lsp.json` at the project root.
 
+Ghostrefs uses a single Pyright process and sends reference requests sequentially.
+
 Findings are candidates for review: dynamic imports, reflection, and external
 consumers may be invisible to the language server.
 

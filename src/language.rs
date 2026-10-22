@@ -1,11 +1,11 @@
 use std::path::{Path, PathBuf};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum Language {
+pub(crate) enum Language {
     Python,
 }
 
-pub struct LspConfig {
+pub(crate) struct LspConfig {
     pub command: &'static str,
     pub args: &'static [&'static str],
     pub language_id: &'static str,
@@ -13,7 +13,7 @@ pub struct LspConfig {
 
 impl Language {
     /// Detect a shared language, rejecting empty or mixed file lists.
-    pub fn detect(files: &[PathBuf]) -> Result<Self, String> {
+    pub(crate) fn detect(files: &[PathBuf]) -> Result<Self, String> {
         let first = files
             .first()
             .ok_or_else(|| "no supported source files found".to_owned())?;
@@ -32,14 +32,14 @@ impl Language {
         Ok(language)
     }
 
-    pub fn from_path(path: &Path) -> Option<Self> {
+    pub(crate) fn from_path(path: &Path) -> Option<Self> {
         match path.extension()?.to_str()? {
             "py" => Some(Self::Python),
             _ => None,
         }
     }
 
-    pub fn lsp_config(self) -> LspConfig {
+    pub(crate) const fn lsp_config(self) -> LspConfig {
         match self {
             Self::Python => LspConfig {
                 command: "pyright-langserver",

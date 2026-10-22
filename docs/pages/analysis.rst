@@ -17,8 +17,9 @@ From references to a graph
 --------------------------
 
 1. Collect Python files from the workspace and requested source/test paths.
-2. Start Pyright, apply settings, and open the collected files.
-3. Collect hierarchical document symbols, then request references sequentially.
+2. Start a single Pyright process, apply settings, and open all collected files.
+3. Collect hierarchical document symbols, then request references sequentially
+   from the same process.
    Normal reports start with reportable production declarations and
    follow incoming references to discover consumers, including class activation,
    until no new consumers appear. Declarations with no path to a reported
