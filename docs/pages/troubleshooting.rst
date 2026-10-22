@@ -80,6 +80,22 @@ workspace root while retaining the production and test consumers you need
 to analyze. See :doc:`configuration` for the difference between analysis
 ignore rules and Pyright settings.
 
+Large workspace scans are slow
+------------------------------
+
+Collection progress always shows the number of collected symbols, reference
+requests, and elapsed time on stderr. Reference searches in Pyright
+usually dominate scan time; rebuilding Ghostrefs in release mode alone may
+have little effect on that work.
+
+Ghostrefs uses a single Pyright process and sends reference requests sequentially.
+
+Normal reports follow references backwards from production declarations and
+skip searches for declarations with no path to a reportable symbol. This
+includes nested variables and attributes, which cannot own dependencies.
+``--graph`` collects every declaration's references and can take longer.
+Both modes retain all workspace files so outside-scope consumers remain visible.
+
 CI succeeds when candidates are found
 -------------------------------------
 

@@ -39,7 +39,7 @@ impl Language {
         }
     }
 
-    pub fn lsp_config(self) -> LspConfig {
+    pub const fn lsp_config(self) -> LspConfig {
         match self {
             Self::Python => LspConfig {
                 command: "pyright-langserver",

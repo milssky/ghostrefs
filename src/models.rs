@@ -26,8 +26,13 @@ pub struct SymbolAnalysis {
 }
 
 impl SymbolAnalysis {
+    /// Nested variables and attributes are graph leaves, not report candidates.
+    pub fn is_reportable(&self) -> bool {
+        self.is_scope() || !self.qualname.contains('.')
+    }
+
     /// Functions, methods and classes own references inside their execution scope.
-    pub fn is_scope(&self) -> bool {
+    pub const fn is_scope(&self) -> bool {
         matches!(
             self.kind,
             SymbolKind::FUNCTION | SymbolKind::METHOD | SymbolKind::CLASS | SymbolKind::CONSTRUCTOR

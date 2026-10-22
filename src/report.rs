@@ -1,16 +1,31 @@
+#![expect(
+    clippy::print_stdout,
+    reason = "This module renders CLI reports to stdout"
+)]
+#![expect(
+    clippy::use_debug,
+    reason = "Verbose reports expose LSP diagnostic details"
+)]
+
 use crate::{
     analysis::{Report, SymbolUsage, UsageStatus},
+    cli::Verbosity,
     graph::Graph,
 };
 
 pub fn print_graph(graph: &Graph<'_>) {
     for edge in &graph.edges {
-        print!("{} -> {}", graph.nodes[edge.from.0], graph.nodes[edge.to.0]);
+        let (Some(from), Some(target)) =
+            (graph.nodes.get(edge.from.0), graph.nodes.get(edge.target.0))
+        else {
+            continue;
+        };
+        print!("{from} -> {target}");
         if let Some(location) = edge.location {
             println!(
                 " [reference {}:{}]",
-                location.range.start.line + 1,
-                location.range.start.character + 1
+                location.range.start.line.saturating_add(1),
+                location.range.start.character.saturating_add(1)
             );
         } else {
             println!(" [class member]");
@@ -18,31 +33,22 @@ pub fn print_graph(graph: &Graph<'_>) {
     }
 }
 
-pub fn print_report(report: &Report<'_>, graph: &Graph<'_>, verbose: bool) {
-    if verbose {
-        for &root in &report.production_roots {
-            println!("Production root: {}", graph.nodes[root.0]);
-        }
-        for &root in &report.unknown_roots {
-            println!("Unknown root: {}", graph.nodes[root.0]);
-        }
+pub fn print_report(report: &Report<'_>, graph: &Graph<'_>, verbosity: Verbosity) {
+    if verbosity.is_verbose() {
+        print_roots(report, graph);
     }
-    for usage in report
+    let candidates: Vec<_> = report
         .usages
         .iter()
         .filter(|usage| usage.status == UsageStatus::TestOnly)
-    {
+        .collect();
+    for usage in &candidates {
         print_usage(usage);
-        if verbose {
+        if verbosity.is_verbose() {
             print_details(usage, report, graph);
         }
     }
-
-    let findings = report
-        .usages
-        .iter()
-        .filter(|usage| usage.status == UsageStatus::TestOnly)
-        .count();
+    let findings = candidates.len();
     println!(
         "TestOnly candidates: {findings} ({} production symbols analyzed)",
         report.usages.len()
@@ -55,8 +61,8 @@ fn print_usage(usage: &SymbolUsage<'_>) {
         "{:?} {}:{}:{} {} ({:?})",
         usage.status,
         usage.path.display(),
-        symbol.selection_range.start.line + 1,
-        symbol.selection_range.start.character + 1,
+        symbol.selection_range.start.line.saturating_add(1),
+        symbol.selection_range.start.character.saturating_add(1),
         symbol.qualname,
         symbol.kind,
     );
@@ -73,8 +79,21 @@ fn print_details(usage: &SymbolUsage<'_>, report: &Report<'_>, graph: &Graph<'_>
         "  test chain: {}",
         chain
             .iter()
-            .map(|id| graph.nodes[id.0].to_string())
+            .filter_map(|node_id| graph.nodes.get(node_id.0).map(ToString::to_string))
             .collect::<Vec<_>>()
             .join(" -> ")
     );
+}
+
+fn print_roots(report: &Report<'_>, graph: &Graph<'_>) {
+    for &root in &report.production_roots {
+        if let Some(node) = graph.nodes.get(root.0) {
+            println!("Production root: {node}");
+        }
+    }
+    for &root in &report.unknown_roots {
+        if let Some(node) = graph.nodes.get(root.0) {
+            println!("Unknown root: {node}");
+        }
+    }
 }

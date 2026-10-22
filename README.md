@@ -48,9 +48,12 @@ TestOnly candidates: 2 (6 production symbols analyzed)
 For your own project, set `--root` to the directory matching your Python imports.
 The `--source` and `--tests` paths are relative to that root.
 
-Add `--verbose` to see why a symbol was flagged, or `--graph` to inspect the usage graph.
+Collection progress is always printed to stderr. Add `--verbose` to see why a
+symbol was flagged, or `--graph` to inspect the usage graph.
 Configure ignore patterns, production entry points, and Pyright settings in
 `ghostrefs-lsp.json` at the project root.
+
+Ghostrefs uses a single Pyright process and sends reference requests sequentially.
 
 Findings are candidates for review: dynamic imports, reflection, and external
 consumers may be invisible to the language server.
