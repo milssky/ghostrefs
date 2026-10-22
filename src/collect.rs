@@ -12,9 +12,9 @@ use std::{
 
 use crate::{
     cli::{Cli, Verbosity},
-    lsp::{LspSession, References, file_uri},
+    lsp::{LspSession, file_uri},
 };
-use async_lsp::lsp_types::{DocumentSymbol, DocumentSymbolResponse, Position, Url};
+use async_lsp::lsp_types::{DocumentSymbol, DocumentSymbolResponse};
 use serde_json::Value;
 use tokio::runtime::Builder;
 
@@ -82,15 +82,14 @@ async fn collect_references(
     let mut queried = query_flags(analyses);
     loop {
         let needed = needed_references(analyses, mode);
-        let (requests, targets) = reference_requests(analyses, needed, &mut queried)?;
-        if requests.is_empty() {
+        let pending = pending_references(&needed, &queried);
+        if pending == 0 {
             break;
         }
-        progress.requesting(requests.len());
-        let responses = collect_reference_batch(session, requests).await?;
-        progress.completed = progress.completed.saturating_add(responses.len());
-        store_references(analyses, targets, responses)?;
-        progress.report_batch();
+        progress.requesting(pending);
+        collect_reference_round(session, analyses, needed, &mut queried).await?;
+        progress.completed = progress.completed.saturating_add(pending);
+        progress.report_round();
     }
     mark_unqueried(analyses, queried);
     progress.finish();
@@ -109,53 +108,41 @@ fn needed_references(analyses: &[FileAnalysis], mode: ReferenceMode<'_>) -> Vec<
     }
 }
 
-type SymbolTargets = Vec<(usize, usize)>;
-type ReferencePositions = Vec<(Url, Position)>;
-type ReferenceRequests = (ReferencePositions, SymbolTargets);
-
-#[expect(
-    clippy::too_many_lines,
-    reason = "Keep requests and their matching symbol indices together"
-)]
-fn reference_requests(
-    analyses: &[FileAnalysis],
-    needed: Vec<Vec<bool>>,
-    queried: &mut [Vec<bool>],
-) -> Result<ReferenceRequests> {
-    let mut requests = Vec::new();
-    let mut targets = Vec::new();
-    for (file_index, ((file, file_needed), file_queried)) in
-        analyses.iter().zip(needed).zip(queried).enumerate()
-    {
-        let uri = file_uri(&file.path)?;
-        for (symbol_index, ((symbol, is_needed), was_queried)) in file
-            .symbols
-            .iter()
-            .zip(file_needed)
-            .zip(file_queried)
-            .enumerate()
-        {
-            if is_needed && !*was_queried {
-                *was_queried = true;
-                requests.push((uri.clone(), symbol.selection_range.start));
-                targets.push((file_index, symbol_index));
-            }
-        }
-    }
-    Ok((requests, targets))
+fn pending_references(needed: &[Vec<bool>], queried: &[Vec<bool>]) -> usize {
+    needed
+        .iter()
+        .flatten()
+        .zip(queried.iter().flatten())
+        .filter(|(is_needed, was_queried)| **is_needed && !**was_queried)
+        .count()
 }
 
-fn store_references(
+async fn collect_reference_round(
+    session: &mut LspSession,
     analyses: &mut [FileAnalysis],
-    targets: SymbolTargets,
-    responses: Vec<References>,
+    needed: Vec<Vec<bool>>,
+    queried: &mut [Vec<bool>],
 ) -> Result<()> {
-    for ((file, symbol), references) in targets.into_iter().zip(responses) {
-        analyses
-            .get_mut(file)
-            .and_then(|analysis| analysis.symbols.get_mut(symbol))
-            .ok_or("reference target is missing from collected symbols")?
-            .references = references;
+    for ((file, file_needed), file_queried) in analyses.iter_mut().zip(needed).zip(queried) {
+        collect_file_references(session, file, file_needed, file_queried).await?;
+    }
+    Ok(())
+}
+
+async fn collect_file_references(
+    session: &mut LspSession,
+    file: &mut FileAnalysis,
+    needed: Vec<bool>,
+    queried: &mut [bool],
+) -> Result<()> {
+    let uri = file_uri(&file.path)?;
+    for ((symbol, is_needed), was_queried) in file.symbols.iter_mut().zip(needed).zip(queried) {
+        if is_needed && !*was_queried {
+            symbol.references = session
+                .references(uri.clone(), symbol.selection_range.start)
+                .await?;
+            *was_queried = true;
+        }
     }
     Ok(())
 }
@@ -196,7 +183,7 @@ impl ReferenceProgress {
         }
     }
 
-    fn report_batch(&self) {
+    fn report_round(&self) {
         if self.verbosity.is_verbose() {
             eprintln!(
                 "References: {}/{} in {:.2}s",
@@ -303,15 +290,4 @@ async fn start_session(root: &Path, files: &[PathBuf], settings: &Value) -> Resu
         session.open_document(file, config.language_id).await?;
     }
     Ok(session)
-}
-
-async fn collect_reference_batch(
-    session: &mut LspSession,
-    requests: ReferencePositions,
-) -> Result<Vec<References>> {
-    let mut responses = Vec::with_capacity(requests.len());
-    for (uri, position) in requests {
-        responses.push(session.references(uri, position).await?);
-    }
-    Ok(responses)
 }
