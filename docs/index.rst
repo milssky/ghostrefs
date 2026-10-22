@@ -68,22 +68,15 @@ Run from ``my-project``:
 identifies test consumers. Both paths are resolved relative to ``--root``.
 All three directories must exist.
 
-Try the sample project
-----------------------
+Example output
+--------------
 
-From a checkout of the ghostrefs repository:
-
-.. code-block:: bash
-
-   ghostrefs --root . --source fixtures/python/project --tests fixtures/python/tests
-
-Example output (the absolute path prefix is shortened here):
+The findings depend on your project. For example:
 
 .. code-block:: text
 
-   TestOnly …/main.py:6:5 test_only_used_func (Function)
-   TestOnly …/main.py:14:7 TestOnlyUsedClass (Class)
-   TestOnly candidates: 2 (6 production symbols analyzed)
+   TestOnly …/app/services.py:6:5 legacy_helper (Function)
+   TestOnly candidates: 1 (12 production symbols analyzed)
 
 Each finding gives the file, line, column, qualified symbol name, and symbol
 kind. Locations in the report start at 1.

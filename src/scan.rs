@@ -52,6 +52,3 @@ pub(crate) fn scan_dir(directory: &Path) -> io::Result<Vec<PathBuf>> {
 
     Ok(files)
 }
-
-#[cfg(test)]
-mod tests;

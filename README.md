@@ -33,16 +33,17 @@ cargo install ghostrefs
 
 ## Example
 
-From a checkout of this repository, run against the included sample project:
+Run from the root of your Python project:
 
 ```bash
-ghostrefs --root . --source fixtures/python/project --tests fixtures/python/tests
+ghostrefs --root . --source app --tests tests
 ```
 
+Example output:
+
 ```text
-TestOnly …/main.py:6:5 test_only_used_func (Function)
-TestOnly …/main.py:14:7 TestOnlyUsedClass (Class)
-TestOnly candidates: 2 (6 production symbols analyzed)
+TestOnly …/app/services.py:6:5 legacy_helper (Function)
+TestOnly candidates: 1 (12 production symbols analyzed)
 ```
 
 For your own project, set `--root` to the directory matching your Python imports.

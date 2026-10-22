@@ -1,17 +1,6 @@
 # easy-peasy: Public API
 avoid-breaking-exported-api = false
 
-# easy-peasy: Minimal supported Rust version
-check-incompatible-msrv-in-tests = true
-
-# easy-peasy: Tests may panic and print
-allow-dbg-in-tests = true
-allow-expect-in-tests = true
-allow-indexing-slicing-in-tests = true
-allow-panic-in-tests = true
-allow-print-in-tests = true
-allow-unwrap-in-tests = true
-
 # easy-peasy: Naming
 # Permit Rust lifetime syntax and standard-library module names.
 allowed-idents-below-min-chars = ["'_", "fs", "io"]
