@@ -22,11 +22,11 @@ use tokio::{
     task::JoinHandle,
 };
 
-pub(crate) type References = Option<Vec<Location>>;
+pub type References = Option<Vec<Location>>;
 type IoTask = JoinHandle<Result<(), LspError>>;
 use tokio_util::compat::{TokioAsyncReadCompatExt as _, TokioAsyncWriteCompatExt as _};
 
-pub(crate) struct LspSession {
+pub struct LspSession {
     server: ServerSocket,
     child: Child,
     io_task: IoTask,
@@ -37,7 +37,7 @@ impl LspSession {
         clippy::future_not_send,
         reason = "LSP initialization runs on a current-thread runtime"
     )]
-    pub(crate) async fn start(root: &Path, command: &str, arguments: &[&str]) -> Result<Self> {
+    pub async fn start(root: &Path, command: &str, arguments: &[&str]) -> Result<Self> {
         let workspace_root = canonicalize(root).await?;
         let mut child = spawn_server(&workspace_root, command, arguments)?;
         let (mainloop, mut server) = MainLoop::new_client(client_router);
@@ -54,13 +54,13 @@ impl LspSession {
         })
     }
 
-    pub(crate) fn configure(&mut self, settings: serde_json::Value) -> Result<()> {
+    pub fn configure(&mut self, settings: serde_json::Value) -> Result<()> {
         self.server
             .did_change_configuration(DidChangeConfigurationParams { settings })?;
         Ok(())
     }
 
-    pub(crate) async fn open_document(&mut self, path: &Path, language_id: &str) -> Result<()> {
+    pub async fn open_document(&mut self, path: &Path, language_id: &str) -> Result<()> {
         let canonical_path = path.canonicalize()?;
         let uri = file_uri(&canonical_path)?;
 
@@ -78,7 +78,7 @@ impl LspSession {
         Ok(())
     }
 
-    pub(crate) async fn document_symbols(
+    pub async fn document_symbols(
         &mut self,
         path: &Path,
     ) -> Result<Option<DocumentSymbolResponse>> {
@@ -96,7 +96,7 @@ impl LspSession {
         Ok(symbols)
     }
 
-    pub(crate) async fn references(&mut self, uri: Url, position: Position) -> Result<References> {
+    pub async fn references(&mut self, uri: Url, position: Position) -> Result<References> {
         let references = self
             .server
             .references(ReferenceParams {
@@ -114,7 +114,7 @@ impl LspSession {
         Ok(references)
     }
 
-    pub(crate) async fn shutdown(mut self) -> Result<()> {
+    pub async fn shutdown(mut self) -> Result<()> {
         self.server.shutdown(()).await?;
         self.server.exit(())?;
 
@@ -133,7 +133,7 @@ impl LspSession {
     }
 }
 
-pub(crate) fn file_uri(path: &Path) -> Result<Url> {
+pub fn file_uri(path: &Path) -> Result<Url> {
     Url::from_file_path(path).map_err(|()| format!("invalid file path: {}", path.display()).into())
 }
 

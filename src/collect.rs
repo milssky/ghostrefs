@@ -25,7 +25,7 @@ use crate::{
 };
 
 #[derive(Clone, Copy)]
-pub(crate) enum ReferenceMode<'source> {
+pub enum ReferenceMode<'source> {
     Graph,
     Report {
         source: &'source Path,
@@ -33,7 +33,7 @@ pub(crate) enum ReferenceMode<'source> {
     },
 }
 
-pub(crate) fn run(
+pub fn run(
     cli: &Cli,
     files: &[PathBuf],
     settings: &Value,

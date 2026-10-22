@@ -7,7 +7,7 @@ use crate::{
 };
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(crate) enum UsageStatus {
+pub enum UsageStatus {
     TestOnly,
     UsedInProduction,
     UsedOutsideScope,
@@ -16,14 +16,14 @@ pub(crate) enum UsageStatus {
     Unknown,
 }
 
-pub(crate) struct SymbolUsage<'source> {
+pub struct SymbolUsage<'source> {
     pub node: NodeId,
     pub path: &'source Path,
     pub symbol: &'source SymbolAnalysis,
     pub status: UsageStatus,
 }
 
-pub(crate) struct Report<'source> {
+pub struct Report<'source> {
     pub usages: Vec<SymbolUsage<'source>>,
     pub production_roots: Vec<NodeId>,
     pub unknown_roots: Vec<NodeId>,
@@ -31,14 +31,14 @@ pub(crate) struct Report<'source> {
 }
 
 impl Report<'_> {
-    pub(crate) fn test_chain(&self, target: NodeId) -> Vec<NodeId> {
+    pub fn test_chain(&self, target: NodeId) -> Vec<NodeId> {
         self.tests.chain(target)
     }
 }
 
 /// Conservative roots are production modules, main functions, and unconsumed
 /// top-level declarations. Configured entry points add explicitly known roots.
-pub(crate) fn analyze<'source>(
+pub fn analyze<'source>(
     graph: &Graph<'source>,
     source: &Path,
     tests: &Path,

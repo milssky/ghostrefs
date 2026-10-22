@@ -6,7 +6,7 @@ use std::path::{Path, PathBuf};
 use crate::language::Language;
 
 /// Include workspace consumers and any source/test directories outside it.
-pub(crate) fn scan_workspace(root: &Path, source: &Path, tests: &Path) -> Result<Vec<PathBuf>> {
+pub fn scan_workspace(root: &Path, source: &Path, tests: &Path) -> Result<Vec<PathBuf>> {
     let mut files = scan_dir(root)?;
     if !source.starts_with(root) {
         files.extend(scan_dir(source)?);
@@ -26,7 +26,7 @@ pub(crate) fn scan_workspace(root: &Path, source: &Path, tests: &Path) -> Result
 }
 
 /// Find supported source files without reading or parsing their contents.
-pub(crate) fn scan_dir(directory: &Path) -> io::Result<Vec<PathBuf>> {
+pub fn scan_dir(directory: &Path) -> io::Result<Vec<PathBuf>> {
     let mut files = Vec::new();
 
     for directory_entry in fs::read_dir(directory)? {

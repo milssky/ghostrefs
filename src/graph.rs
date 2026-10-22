@@ -10,10 +10,10 @@ use async_lsp::lsp_types::{Location, Position, SymbolKind};
 use crate::models::{EntryPoint, FileAnalysis, SymbolAnalysis};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-pub(crate) struct NodeId(pub usize);
+pub struct NodeId(pub usize);
 
 #[derive(Debug)]
-pub(crate) enum Node<'source> {
+pub enum Node<'source> {
     Module(&'source Path),
     Symbol {
         path: &'source Path,
@@ -51,14 +51,14 @@ impl formatting::Display for Node<'_> {
 }
 
 #[derive(Debug)]
-pub(crate) struct Edge<'source> {
+pub struct Edge<'source> {
     pub from: NodeId,
     pub target: NodeId,
     pub location: Option<&'source Location>,
 }
 
 #[derive(Debug)]
-pub(crate) struct Graph<'source> {
+pub struct Graph<'source> {
     pub nodes: Vec<Node<'source>>,
     /// Consumer-to-symbol edges. A missing location marks conservative class activation.
     pub edges: Vec<Edge<'source>>,
@@ -66,7 +66,7 @@ pub(crate) struct Graph<'source> {
 
 impl Graph<'_> {
     /// Resolve an exact qualified name within a collected file.
-    pub(crate) fn resolve_entry(&self, entrypoint: &EntryPoint) -> Result<NodeId, String> {
+    pub fn resolve_entry(&self, entrypoint: &EntryPoint) -> Result<NodeId, String> {
         let matches = self.entry_candidates(entrypoint);
 
         match matches.as_slice() {
@@ -104,13 +104,13 @@ impl Graph<'_> {
     }
 }
 
-pub(crate) struct Connections {
+pub struct Connections {
     pub outgoing: Vec<Vec<NodeId>>,
     pub consumed: Vec<bool>,
 }
 
 impl Connections {
-    pub(crate) fn new(graph: &Graph<'_>) -> Self {
+    pub fn new(graph: &Graph<'_>) -> Self {
         let mut connections = Self {
             outgoing: vec![Vec::new(); graph.nodes.len()],
             consumed: vec![false; graph.nodes.len()],
@@ -129,13 +129,13 @@ impl Connections {
     }
 }
 
-pub(crate) struct Reachability {
+pub struct Reachability {
     reached: Vec<bool>,
     parents: Vec<Option<NodeId>>,
 }
 
 impl Reachability {
-    pub(crate) fn walk(outgoing: &[Vec<NodeId>], roots: &[NodeId]) -> Self {
+    pub fn walk(outgoing: &[Vec<NodeId>], roots: &[NodeId]) -> Self {
         let mut reachability = Self {
             reached: vec![false; outgoing.len()],
             parents: vec![None; outgoing.len()],
@@ -165,11 +165,11 @@ impl Reachability {
         }
     }
 
-    pub(crate) fn contains(&self, node: NodeId) -> bool {
+    pub fn contains(&self, node: NodeId) -> bool {
         self.reached.get(node.0).copied().unwrap_or(false)
     }
 
-    pub(crate) fn chain(&self, target: NodeId) -> Vec<NodeId> {
+    pub fn chain(&self, target: NodeId) -> Vec<NodeId> {
         if !self.contains(target) {
             return Vec::new();
         }
@@ -191,7 +191,7 @@ struct FileNodes {
 
 /// Build a graph over the collected files, retaining symbols with no references.
 /// File paths must use the same absolute paths as reference URIs.
-pub(crate) fn build(files: &[FileAnalysis]) -> Graph<'_> {
+pub fn build(files: &[FileAnalysis]) -> Graph<'_> {
     let mut graph = Graph {
         nodes: Vec::new(),
         edges: Vec::new(),
@@ -322,11 +322,7 @@ fn owner_at(graph: &Graph<'_>, file: &FileNodes, position: Position) -> NodeId {
 /// References add incoming edges. Starting with reportable production symbols,
 /// search their ancestors until no new consumers are discovered. A declaration
 /// outside this closure cannot affect any reported status or test chain.
-pub(crate) fn reference_targets(
-    files: &[FileAnalysis],
-    source: &Path,
-    tests: &Path,
-) -> Vec<Vec<bool>> {
+pub fn reference_targets(files: &[FileAnalysis], source: &Path, tests: &Path) -> Vec<Vec<bool>> {
     let graph = build(files);
     let roots = report_roots(&graph, source, tests);
     let mut incoming = vec![Vec::new(); graph.nodes.len()];

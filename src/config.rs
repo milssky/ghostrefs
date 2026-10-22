@@ -12,20 +12,20 @@ use crate::models::EntryPoint;
 const DEFAULT_SETTINGS: &str = include_str!("../ghostrefs-lsp.json");
 const CONFIG_FILE: &str = "ghostrefs-lsp.json";
 
-pub(crate) struct Config {
+pub struct Config {
     pub lsp_settings: Value,
     pub ignore: IgnoreRules,
     pub production_entrypoints: Vec<EntryPoint>,
 }
 
-pub(crate) struct IgnoreRules {
+pub struct IgnoreRules {
     root: PathBuf,
     patterns: GlobSet,
 }
 
 impl Config {
     /// Project settings override bundled defaults; nested objects are merged.
-    pub(crate) fn load(root: &Path) -> Result<Self> {
+    pub fn load(root: &Path) -> Result<Self> {
         let canonical_root = root.canonicalize()?;
         let mut settings = load_settings(&canonical_root)?;
         // Keep ghostrefs-only options out of workspace/didChangeConfiguration.
@@ -153,7 +153,7 @@ fn resolve_entry_path(root: &Path, path: &str) -> Result<PathBuf> {
 
 impl IgnoreRules {
     /// Patterns match file paths relative to the analyzed project root.
-    pub(crate) fn matches(&self, path: &Path) -> bool {
+    pub fn matches(&self, path: &Path) -> bool {
         path.strip_prefix(&self.root)
             .is_ok_and(|relative| self.patterns.is_match(relative))
     }

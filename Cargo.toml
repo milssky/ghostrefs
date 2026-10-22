@@ -32,7 +32,8 @@ variant_size_differences = "warn"
 missing_copy_implementations = "warn"
 missing_docs = "warn"
 unnameable_types = "warn"
-unreachable_pub = "warn"
+# Internal modules use plain `pub` for access within this binary crate.
+unreachable_pub = "allow"
 
 # easy-peasy: Dead code
 closure_returning_async_block = "warn"

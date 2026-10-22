@@ -4,7 +4,7 @@ use std::path::{Path, PathBuf};
 
 #[derive(Parser)]
 #[command(version, about)]
-pub(crate) struct Cli {
+pub struct Cli {
     /// Source code root folder.
     #[arg(short, long)]
     pub root: PathBuf,
@@ -27,7 +27,7 @@ pub(crate) struct Cli {
 }
 
 impl Cli {
-    pub(crate) fn reference_mode(&self) -> ReferenceMode<'_> {
+    pub fn reference_mode(&self) -> ReferenceMode<'_> {
         if self.graph {
             ReferenceMode::Graph
         } else {
@@ -38,7 +38,7 @@ impl Cli {
         }
     }
 
-    pub(crate) const fn verbosity(&self) -> Verbosity {
+    pub const fn verbosity(&self) -> Verbosity {
         if self.verbose {
             Verbosity::Verbose
         } else {
@@ -46,7 +46,7 @@ impl Cli {
         }
     }
 
-    pub(crate) fn resolve_paths(mut self) -> Result<Self, String> {
+    pub fn resolve_paths(mut self) -> Result<Self, String> {
         self.root = resolve_directory(&self.root)?;
         self.source = resolve_directory(&self.root.join(&self.source))?;
         self.tests = resolve_directory(&self.root.join(&self.tests))?;
@@ -72,13 +72,13 @@ fn resolve_directory(path: &Path) -> Result<PathBuf, String> {
 }
 
 #[derive(Clone, Copy)]
-pub(crate) enum Verbosity {
+pub enum Verbosity {
     Quiet,
     Verbose,
 }
 
 impl Verbosity {
-    pub(crate) const fn is_verbose(self) -> bool {
+    pub const fn is_verbose(self) -> bool {
         matches!(self, Self::Verbose)
     }
 }

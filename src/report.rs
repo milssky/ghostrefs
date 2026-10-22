@@ -13,7 +13,7 @@ use crate::{
     graph::Graph,
 };
 
-pub(crate) fn print_graph(graph: &Graph<'_>) {
+pub fn print_graph(graph: &Graph<'_>) {
     for edge in &graph.edges {
         let (Some(from), Some(target)) =
             (graph.nodes.get(edge.from.0), graph.nodes.get(edge.target.0))
@@ -33,7 +33,7 @@ pub(crate) fn print_graph(graph: &Graph<'_>) {
     }
 }
 
-pub(crate) fn print_report(report: &Report<'_>, graph: &Graph<'_>, verbosity: Verbosity) {
+pub fn print_report(report: &Report<'_>, graph: &Graph<'_>, verbosity: Verbosity) {
     if verbosity.is_verbose() {
         print_roots(report, graph);
     }
