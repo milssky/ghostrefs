@@ -1,10 +1,11 @@
 Development
 ===========
 
-Run the development checks from a checkout with Rust installed:
+Run from a checkout with Rust and Pyright installed:
 
 .. code-block:: bash
 
+   cargo run --locked -- --root . --source fixtures/python/project --tests fixtures/python/tests
    cargo fmt --all -- --check
    cargo clippy --locked --all-targets --all-features -- -D warnings
 
