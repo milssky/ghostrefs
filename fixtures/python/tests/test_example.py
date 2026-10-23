@@ -1,6 +1,6 @@
 import pytest
 
-from fixtures.python.project.main import TestOnlyUsedClass, test_only_used_func 
+from fixtures.python.project.main import TEST_ONLY_CONST, TestOnlyUsedClass, test_only_used_func, call_only_test
 
 @pytest.fixture
 def fix() -> int:
@@ -22,3 +22,12 @@ def test_class() -> None:
     """Test for class."""
     instance = TestOnlyUsedClass()
     assert isinstance(instance, TestOnlyUsedClass)
+
+
+def test_const() -> None:
+    """Test for const."""
+    assert TestOnlyUsedClass == 42
+
+
+def test_call_only() -> None:
+    assert call_only_test() is None
