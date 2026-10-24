@@ -13,7 +13,7 @@
 
 **A must-have for your coding agent's toolkit.** AI refactors can leave old
 implementations behind, kept alive by their own tests. Everything stays green.
-The leftovers stay hidden. Run ghostrefs after agent-driven changes to expose
+The leftovers stay hidden. Run `ghostrefs` after agent-driven changes to expose
 test-only code, follow the reference chains, and give your agent concrete
 candidates to review and remove.
 
