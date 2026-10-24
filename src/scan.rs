@@ -3,7 +3,7 @@ use std::fs;
 use std::io;
 use std::path::{Path, PathBuf};
 
-use crate::language::Language;
+use crate::language;
 
 /// Include workspace consumers and any source/test directories outside it.
 pub fn scan_workspace(root: &Path, source: &Path, tests: &Path) -> Result<Vec<PathBuf>> {
@@ -33,17 +33,14 @@ pub fn scan_dir(directory: &Path) -> io::Result<Vec<PathBuf>> {
         let path = directory_entry?.path();
 
         if path.is_dir() {
-            let excluded = path.file_name().is_some_and(|name| {
-                matches!(
-                    name.to_str(),
-                    // TODO: Looks lile shit.
-                    Some(".git" | ".venv" | "venv" | "__pycache__" | "target")
-                )
-            });
+            let excluded = path
+                .file_name()
+                .is_some_and(|name| name == ".git" || name == "target")
+                || language::excludes_directory(&path);
             if !path.is_symlink() && !excluded {
                 files.extend(scan_dir(&path)?);
             }
-        } else if path.is_file() && Language::from_path(&path).is_some() {
+        } else if path.is_file() && language::supports_path(&path) {
             files.push(path.canonicalize()?);
         } else {
             // Unsupported files are outside the language scan.

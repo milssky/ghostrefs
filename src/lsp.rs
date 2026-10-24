@@ -1,15 +1,19 @@
+mod pyright;
+mod server;
+
+pub use server::Server;
+
 use crate::Result;
 use std::{future::ready, ops::ControlFlow, path::Path, process::Stdio};
 
 use async_lsp::{
     Error as LspError, LanguageServer as _, MainLoop, ServerSocket,
     lsp_types::{
-        ClientCapabilities, DiagnosticClientCapabilities, DidChangeConfigurationParams,
-        DidOpenTextDocumentParams, DocumentSymbolClientCapabilities, DocumentSymbolParams,
-        DocumentSymbolResponse, InitializeParams, InitializedParams, Location, PartialResultParams,
-        Position, ReferenceContext, ReferenceParams, TextDocumentClientCapabilities,
-        TextDocumentIdentifier, TextDocumentItem, TextDocumentPositionParams, Url,
-        WorkDoneProgressParams, WorkspaceFolder,
+        ClientCapabilities, DidChangeConfigurationParams, DidOpenTextDocumentParams,
+        DocumentSymbolClientCapabilities, DocumentSymbolParams, DocumentSymbolResponse,
+        InitializeParams, InitializedParams, Location, PartialResultParams, Position,
+        ReferenceContext, ReferenceParams, TextDocumentClientCapabilities, TextDocumentIdentifier,
+        TextDocumentItem, TextDocumentPositionParams, Url, WorkDoneProgressParams, WorkspaceFolder,
         request::{RegisterCapability, UnregisterCapability, WorkspaceDiagnosticRefresh},
     },
     router::Router,
@@ -37,13 +41,14 @@ impl LspSession {
         clippy::future_not_send,
         reason = "LSP initialization runs on a current-thread runtime"
     )]
-    pub async fn start(root: &Path, command: &str, arguments: &[&str]) -> Result<Self> {
+    pub async fn start(root: &Path, backend: Server) -> Result<Self> {
+        let definition = backend.definition();
         let workspace_root = canonicalize(root).await?;
-        let mut child = spawn_server(&workspace_root, command, arguments)?;
+        let mut child = spawn_server(&workspace_root, definition.command, definition.args)?;
         let (mainloop, mut server) = MainLoop::new_client(client_router);
         let io_task = start_io(mainloop, &mut child)?;
         let _ = server
-            .initialize(initialize_params(&workspace_root)?)
+            .initialize(initialize_params(&workspace_root, definition.capabilities)?)
             .await?;
         server.initialized(InitializedParams {})?;
 
@@ -156,11 +161,18 @@ fn client_router(_: ServerSocket) -> Router<()> {
     router
 }
 
-fn initialize_params(root: &Path) -> Result<InitializeParams> {
+fn initialize_params(
+    root: &Path,
+    mut capabilities: TextDocumentClientCapabilities,
+) -> Result<InitializeParams> {
+    capabilities.document_symbol = Some(DocumentSymbolClientCapabilities {
+        hierarchical_document_symbol_support: Some(true),
+        ..DocumentSymbolClientCapabilities::default()
+    });
     Ok(InitializeParams {
         process_id: Some(process::id()),
         capabilities: ClientCapabilities {
-            text_document: Some(document_capabilities()),
+            text_document: Some(capabilities),
             ..ClientCapabilities::default()
         },
         workspace_folders: Some(vec![WorkspaceFolder {
@@ -169,21 +181,6 @@ fn initialize_params(root: &Path) -> Result<InitializeParams> {
         }]),
         ..InitializeParams::default()
     })
-}
-
-fn document_capabilities() -> TextDocumentClientCapabilities {
-    // Pull diagnostics prevent background type-checking of every opened file.
-    TextDocumentClientCapabilities {
-        diagnostic: Some(DiagnosticClientCapabilities {
-            dynamic_registration: Some(true),
-            ..DiagnosticClientCapabilities::default()
-        }),
-        document_symbol: Some(DocumentSymbolClientCapabilities {
-            hierarchical_document_symbol_support: Some(true),
-            ..DocumentSymbolClientCapabilities::default()
-        }),
-        ..TextDocumentClientCapabilities::default()
-    }
 }
 
 fn start_io(mainloop: MainLoop<Router<()>>, child: &mut Child) -> Result<IoTask> {

@@ -7,7 +7,7 @@ use std::{
 use globset::{Glob, GlobBuilder, GlobSet, GlobSetBuilder};
 use serde_json::{Map, Value};
 
-use crate::models::EntryPoint;
+use crate::{language, models::EntryPoint};
 
 const DEFAULT_SETTINGS: &str = include_str!("../ghostrefs-lsp.json");
 const CONFIG_FILE: &str = "ghostrefs-lsp.json";
@@ -31,7 +31,7 @@ impl Config {
         // Keep ghostrefs-only options out of workspace/didChangeConfiguration.
         let options = settings
             .as_object_mut()
-            .ok_or("bundled configuration must be a JSON object")?
+            .ok_or("configuration must be a JSON object")?
             .remove("ghostrefs");
         let (ignore, production_entrypoints) = parse_options(&canonical_root, options)?;
         Ok(Self {
@@ -129,10 +129,11 @@ fn validate_entry_name(path: &str, qualname: &str) -> Result<()> {
         )
         .into());
     }
-    if qualname
-        .split('.')
-        .any(|part| part.is_empty() || part.chars().any(char::is_whitespace))
-    {
+    let valid_name = language::from_path(Path::new(path)).map_or_else(
+        || !qualname.is_empty() && !qualname.chars().any(char::is_whitespace),
+        |language| language.is_valid_qualname(qualname),
+    );
+    if !valid_name {
         return Err(format!("invalid production entrypoint qualname: {qualname:?}").into());
     }
     Ok(())

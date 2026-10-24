@@ -4,24 +4,19 @@
     reason = "LSP work runs on a current-thread runtime"
 )]
 
-use crate::Result;
 use std::{
     path::{Path, PathBuf},
     time::Instant,
 };
 
-use crate::{
-    cli::Cli,
-    lsp::{LspSession, file_uri},
-};
-use async_lsp::lsp_types::{DocumentSymbol, DocumentSymbolResponse};
 use serde_json::Value;
 use tokio::runtime::Builder;
 
 use crate::{
-    graph,
-    language::Language,
-    models::{FileAnalysis, SymbolAnalysis},
+    Result, graph,
+    language::{self, Language},
+    lsp::{LspSession, file_uri},
+    models::FileAnalysis,
 };
 
 #[derive(Clone, Copy)]
@@ -34,15 +29,16 @@ pub enum ReferenceMode<'source> {
 }
 
 pub fn run(
-    cli: &Cli,
+    root: &Path,
     files: &[PathBuf],
-    settings: &Value,
+    lsp_settings: &Value,
     mode: ReferenceMode<'_>,
 ) -> Result<Vec<FileAnalysis>> {
     let runtime = Builder::new_current_thread().enable_all().build()?;
     runtime.block_on(async {
-        let mut session = start_session(&cli.root, files, settings).await?;
-        let collected = collect_files(&mut session, files, mode).await;
+        let language = language::detect(files)?;
+        let mut session = start_session(root, files, language, lsp_settings).await?;
+        let collected = collect_files(&mut session, files, language, mode).await;
         let shutdown = session.shutdown().await;
         let analyses = collected?;
         shutdown?;
@@ -53,14 +49,15 @@ pub fn run(
 async fn collect_files(
     session: &mut LspSession,
     files: &[PathBuf],
+    language: &dyn Language,
     mode: ReferenceMode<'_>,
 ) -> Result<Vec<FileAnalysis>> {
     let started = Instant::now();
     let mut analyses = Vec::new();
     for file in files {
-        analyses.push(collect_file(session, file).await?);
+        analyses.push(collect_file(session, file, language).await?);
     }
-    let total: usize = analyses.iter().map(|file| file.symbols.len()).sum();
+    let total: usize = analyses.iter().map(|file| file.symbols().len()).sum();
     eprintln!(
         "Collected {total} symbols in {:.2}s",
         started.elapsed().as_secs_f64()
@@ -96,7 +93,7 @@ fn needed_references(analyses: &[FileAnalysis], mode: ReferenceMode<'_>) -> Vec<
     match mode {
         ReferenceMode::Graph => analyses
             .iter()
-            .map(|file| vec![true; file.symbols.len()])
+            .map(|file| vec![true; file.symbols().len()])
             .collect(),
         ReferenceMode::Report { source, tests } => {
             graph::reference_targets(analyses, source, tests)
@@ -131,12 +128,12 @@ async fn collect_file_references(
     needed: Vec<bool>,
     queried: &mut [bool],
 ) -> Result<()> {
-    let uri = file_uri(&file.path)?;
-    for ((symbol, is_needed), was_queried) in file.symbols.iter_mut().zip(needed).zip(queried) {
+    let uri = file_uri(file.path())?;
+    for (((position, references), is_needed), was_queried) in
+        file.reference_slots_mut().zip(needed).zip(queried)
+    {
         if is_needed && !*was_queried {
-            symbol.references = session
-                .references(uri.clone(), symbol.selection_range.start)
-                .await?;
+            *references = session.references(uri.clone(), position).await?;
             *was_queried = true;
         }
     }
@@ -145,9 +142,9 @@ async fn collect_file_references(
 
 fn mark_unqueried(analyses: &mut [FileAnalysis], queried: Vec<Vec<bool>>) {
     for (file, file_queried) in analyses.iter_mut().zip(queried) {
-        for (symbol, was_queried) in file.symbols.iter_mut().zip(file_queried) {
+        for ((_, references), was_queried) in file.reference_slots_mut().zip(file_queried) {
             if !was_queried {
-                symbol.references = Some(Vec::new());
+                *references = Some(Vec::new());
             }
         }
     }
@@ -162,7 +159,7 @@ struct ReferenceProgress {
 impl ReferenceProgress {
     fn new(analyses: &[FileAnalysis]) -> Self {
         Self {
-            total: analyses.iter().map(|file| file.symbols.len()).sum(),
+            total: analyses.iter().map(|file| file.symbols().len()).sum(),
             completed: 0,
             started: Instant::now(),
         }
@@ -194,88 +191,32 @@ impl ReferenceProgress {
     }
 }
 
-async fn collect_file(session: &mut LspSession, path: &Path) -> Result<FileAnalysis> {
-    let declarations = nested_declarations(session.document_symbols(path).await?, path)?;
-    Ok(FileAnalysis {
-        path: path.to_path_buf(),
-        symbols: flatten_symbols(declarations),
-    })
-}
-
-fn nested_declarations(
-    response: Option<DocumentSymbolResponse>,
+async fn collect_file(
+    session: &mut LspSession,
     path: &Path,
-) -> Result<Vec<DocumentSymbol>> {
-    match response {
-        Some(DocumentSymbolResponse::Nested(declarations)) => Ok(declarations),
-        Some(DocumentSymbolResponse::Flat(declarations)) if declarations.is_empty() => {
-            Ok(Vec::new())
-        }
-        Some(DocumentSymbolResponse::Flat(_)) => Err(format!(
-            "expected hierarchical document symbols for {}",
-            path.display()
-        )
-        .into()),
-        None => Err(format!(
-            "language server returned no document-symbol result for {}",
-            path.display()
-        )
-        .into()),
-    }
-}
-
-/// Preserve declaration order while flattening nested names in depth-first order.
-fn flatten_symbols(declarations: Vec<DocumentSymbol>) -> Vec<SymbolAnalysis> {
-    let mut pending: Vec<_> = declarations
-        .into_iter()
-        .rev()
-        .map(|symbol| (symbol, String::new()))
-        .collect();
-    let mut symbols = Vec::new();
-    while let Some((symbol, parent)) = pending.pop() {
-        let flattened = flatten_symbol(&symbol, &parent);
-        if let Some(children) = symbol.children {
-            pending.extend(
-                children
-                    .into_iter()
-                    .rev()
-                    .map(|child| (child, flattened.qualname.clone())),
-            );
-        }
-        symbols.push(flattened);
-    }
-    symbols
-}
-
-fn flatten_symbol(symbol: &DocumentSymbol, parent: &str) -> SymbolAnalysis {
-    let qualname = if parent.is_empty() {
-        symbol.name.clone()
-    } else {
-        format!("{parent}.{}", symbol.name)
-    };
-    SymbolAnalysis {
-        name: symbol.name.clone(),
-        qualname,
-        kind: symbol.kind,
-        range: symbol.range,
-        selection_range: symbol.selection_range,
-        references: None,
-    }
+    language: &dyn Language,
+) -> Result<FileAnalysis> {
+    language.normalize_symbols(session.document_symbols(path).await?, path)
 }
 
 fn query_flags(analyses: &[FileAnalysis]) -> Vec<Vec<bool>> {
     analyses
         .iter()
-        .map(|file| vec![false; file.symbols.len()])
+        .map(|file| vec![false; file.symbols().len()])
         .collect()
 }
 
-async fn start_session(root: &Path, files: &[PathBuf], settings: &Value) -> Result<LspSession> {
-    let config = Language::detect(files)?.lsp_config();
-    let mut session = LspSession::start(root, config.command, config.args).await?;
-    session.configure(settings.clone())?;
+async fn start_session(
+    root: &Path,
+    files: &[PathBuf],
+    language: &dyn Language,
+    lsp_settings: &Value,
+) -> Result<LspSession> {
+    let server = language.default_server();
+    let mut session = LspSession::start(root, server).await?;
+    session.configure(lsp_settings.clone())?;
     for file in files {
-        session.open_document(file, config.language_id).await?;
+        session.open_document(file, language.language_id()).await?;
     }
     Ok(session)
 }

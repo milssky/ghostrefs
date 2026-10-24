@@ -130,7 +130,7 @@ impl AnalysisScope<'_> {
     fn includes_in_report(&self, path: &Path, symbol: &SymbolAnalysis) -> bool {
         // Local variables and parameters remain in the graph. Nested declarations
         // and top-level variables can still be useful dead-code findings.
-        self.is_production(path) && !self.ignore.matches(path) && symbol.is_reportable()
+        self.is_production(path) && !self.ignore.matches(path) && symbol.semantics.reportable
     }
 
     fn validate_entry(&self, entrypoint: &EntryPoint) -> Result<(), String> {
@@ -280,10 +280,10 @@ impl Roots {
     }
 }
 
-fn is_inferred_entry(symbol: &SymbolAnalysis, flags: SymbolFlags) -> bool {
-    !symbol.qualname.contains('.')
+const fn is_inferred_entry(symbol: &SymbolAnalysis, flags: SymbolFlags) -> bool {
+    symbol.semantics.top_level
         && symbol.references.is_some()
-        && (!flags.consumed || symbol.name == "main")
+        && (!flags.consumed || symbol.semantics.entrypoint)
 }
 
 struct UsageReachability {
@@ -332,7 +332,10 @@ impl UsageReachability {
         symbol: &SymbolAnalysis,
         flags: SymbolFlags,
     ) -> UsageStatus {
-        if !flags.consumed && symbol.name != "main" && !self.tests.contains(node) && !flags.explicit
+        if !flags.consumed
+            && !symbol.semantics.entrypoint
+            && !self.tests.contains(node)
+            && !flags.explicit
         {
             UsageStatus::Unreferenced
         } else {
