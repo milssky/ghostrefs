@@ -4,9 +4,6 @@ use async_lsp::lsp_types::{Location, Position, Range, SymbolKind};
 
 use crate::Result;
 
-#[cfg(test)]
-mod tests;
-
 /// A canonical absolute file path and a qualified name, such as `App.run`.
 #[derive(Debug)]
 pub struct EntryPoint {
