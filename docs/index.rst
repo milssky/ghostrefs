@@ -11,6 +11,12 @@ It asks a language server for references, follows dependencies through a usage
 graph, and reports candidates for review. The current release analyzes Python
 projects using Pyright.
 
+**A must-have for your coding agent's toolkit.** AI refactors can leave old
+implementations behind, kept alive by their own tests. Everything stays green.
+The leftovers stay hidden. Run ghostrefs after agent-driven changes to expose
+test-only code, follow the reference chains, and give your agent concrete
+candidates to review and remove.
+
 Installation
 ------------
 
