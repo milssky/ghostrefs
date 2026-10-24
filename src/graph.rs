@@ -5,7 +5,7 @@ use std::{
     path::Path,
 };
 
-use async_lsp::lsp_types::{Location, Position, SymbolKind};
+use async_lsp::lsp_types::{Location, Position};
 
 use crate::models::{EntryPoint, FileAnalysis, SymbolAnalysis};
 
@@ -54,13 +54,19 @@ impl formatting::Display for Node<'_> {
 pub struct Edge<'source> {
     pub from: NodeId,
     pub target: NodeId,
-    pub location: Option<&'source Location>,
+    pub origin: EdgeOrigin<'source>,
+}
+
+#[derive(Debug, Clone, Copy)]
+pub enum EdgeOrigin<'source> {
+    Reference(&'source Location),
+    Implicit(&'static str),
 }
 
 #[derive(Debug)]
 pub struct Graph<'source> {
     pub nodes: Vec<Node<'source>>,
-    /// Consumer-to-symbol edges. A missing location marks conservative class activation.
+    /// Consumer-to-symbol edges from LSP references or language-inferred activation.
     pub edges: Vec<Edge<'source>>,
 }
 
@@ -198,11 +204,7 @@ pub fn build(files: &[FileAnalysis]) -> Graph<'_> {
     };
     let index = index_files(&mut graph, files);
     add_reference_edges(&mut graph, files, &index);
-    for file in files {
-        if let Some(nodes) = index.get(file.path.as_path()) {
-            add_class_member_edges(&mut graph, nodes);
-        }
-    }
+    add_implicit_edges(&mut graph, files, &index);
     graph
 }
 
@@ -213,24 +215,45 @@ fn index_files<'source>(
     let mut index = HashMap::new();
     for file in files {
         let module = NodeId(graph.nodes.len());
-        graph.nodes.push(Node::Module(&file.path));
+        graph.nodes.push(Node::Module(file.path()));
 
         let symbols = file
-            .symbols
+            .symbols()
             .iter()
             .map(|symbol| {
                 let node_id = NodeId(graph.nodes.len());
                 graph.nodes.push(Node::Symbol {
-                    path: &file.path,
+                    path: file.path(),
                     symbol,
                 });
                 node_id
             })
             .collect();
 
-        let _ = index.insert(file.path.as_path(), FileNodes { module, symbols });
+        let _ = index.insert(file.path(), FileNodes { module, symbols });
     }
     index
+}
+
+fn add_implicit_edges(
+    graph: &mut Graph<'_>,
+    files: &[FileAnalysis],
+    index: &HashMap<&Path, FileNodes>,
+) {
+    for file in files {
+        let Some(nodes) = index.get(file.path()) else {
+            continue;
+        };
+        graph
+            .edges
+            .extend(file.implicit_edges().iter().filter_map(|edge| {
+                Some(Edge {
+                    from: *nodes.symbols.get(edge.from.0)?,
+                    target: *nodes.symbols.get(edge.target.0)?,
+                    origin: EdgeOrigin::Implicit(edge.reason),
+                })
+            }));
+    }
 }
 
 fn add_reference_edges<'source>(
@@ -239,17 +262,17 @@ fn add_reference_edges<'source>(
     index: &HashMap<&Path, FileNodes>,
 ) {
     for file in files {
-        let Some(targets) = index.get(file.path.as_path()) else {
+        let Some(targets) = index.get(file.path()) else {
             continue;
         };
-        for (symbol, &target) in file.symbols.iter().zip(&targets.symbols) {
+        for (symbol, &target) in file.symbols().iter().zip(&targets.symbols) {
             for location in symbol.references.iter().flatten() {
                 let from = reference_owner(graph, index, location);
 
                 graph.edges.push(Edge {
                     from,
                     target,
-                    location: Some(location),
+                    origin: EdgeOrigin::Reference(location),
                 });
             }
         }
@@ -272,32 +295,6 @@ fn reference_owner<'source>(
     })
 }
 
-// A class reference can construct an instance or expose any of its methods.
-// Activate direct members conservatively: LSP references do not describe
-// implicit __init__, descriptors, or dynamic method dispatch.
-fn add_class_member_edges(graph: &mut Graph<'_>, file: &FileNodes) {
-    for &from in &file.symbols {
-        let Some(Node::Symbol { symbol: class, .. }) = graph.nodes.get(from.0) else {
-            continue;
-        };
-        if class.kind != SymbolKind::CLASS {
-            continue;
-        }
-        for &target in &file.symbols {
-            let Some(Node::Symbol { symbol: member, .. }) = graph.nodes.get(target.0) else {
-                continue;
-            };
-            if is_direct_member(member, class) {
-                graph.edges.push(Edge {
-                    from,
-                    target,
-                    location: None,
-                });
-            }
-        }
-    }
-}
-
 fn owner_at(graph: &Graph<'_>, file: &FileNodes, position: Position) -> NodeId {
     file.symbols
         .iter()
@@ -305,12 +302,8 @@ fn owner_at(graph: &Graph<'_>, file: &FileNodes, position: Position) -> NodeId {
             let Some(Node::Symbol { symbol, .. }) = graph.nodes.get(node_id.0) else {
                 return None;
             };
-            // Variables and parameters are targets, not execution scopes.
-            if !(symbol.is_scope() && symbol.range.start <= position && position < symbol.range.end)
-                // Pyright includes decorators in the declaration range. They
-                // execute in the enclosing scope, before the decorated name.
-                || position < symbol.selection_range.start
-            {
+            let range = symbol.semantics.execution_range?;
+            if !(range.start <= position && position < range.end) {
                 return None;
             }
             Some((node_id, symbol.range))
@@ -344,7 +337,7 @@ fn report_roots(graph: &Graph<'_>, source: &Path, tests: &Path) -> Vec<NodeId> {
             Node::Symbol { path, symbol }
                 if path.starts_with(source)
                     && !path.starts_with(tests)
-                    && symbol.is_reportable() =>
+                    && symbol.semantics.reportable =>
             {
                 Some(NodeId(index))
             }
@@ -368,7 +361,7 @@ fn symbol_mask(
     files
         .iter()
         .map(|file| {
-            file.symbols
+            file.symbols()
                 .iter()
                 .map(|_| {
                     symbols
@@ -378,11 +371,4 @@ fn symbol_mask(
                 .collect()
         })
         .collect()
-}
-
-fn is_direct_member(member: &SymbolAnalysis, class: &SymbolAnalysis) -> bool {
-    member
-        .qualname
-        .rsplit_once('.')
-        .is_some_and(|(parent, _)| parent == class.qualname)
 }

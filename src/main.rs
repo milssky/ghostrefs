@@ -41,5 +41,10 @@ fn collect_workspace(cli: &cli::Cli, config: &config::Config) -> Result<Vec<mode
 
     eprintln!("Collecting LSP symbols from {} files", paths.len());
 
-    collect::run(cli, &paths, &config.lsp_settings, cli.reference_mode())
+    collect::run(
+        &cli.root,
+        &paths,
+        &config.lsp_settings,
+        cli.reference_mode(),
+    )
 }

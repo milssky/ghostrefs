@@ -10,7 +10,7 @@
 use crate::{
     analysis::{Report, SymbolUsage, UsageStatus},
     cli::Verbosity,
-    graph::Graph,
+    graph::{EdgeOrigin, Graph},
 };
 
 pub fn print_graph(graph: &Graph<'_>) {
@@ -21,15 +21,18 @@ pub fn print_graph(graph: &Graph<'_>) {
             continue;
         };
         print!("{from} -> {target}");
-        if let Some(location) = edge.location {
-            println!(
-                " [reference {}:{}]",
-                location.range.start.line.saturating_add(1),
-                location.range.start.character.saturating_add(1)
-            );
-        } else {
-            println!(" [class member]");
-        }
+        print_edge_origin(edge.origin);
+    }
+}
+
+fn print_edge_origin(origin: EdgeOrigin<'_>) {
+    match origin {
+        EdgeOrigin::Reference(location) => println!(
+            " [reference {}:{}]",
+            location.range.start.line.saturating_add(1),
+            location.range.start.character.saturating_add(1)
+        ),
+        EdgeOrigin::Implicit(reason) => println!(" [{reason}]"),
     }
 }
 
