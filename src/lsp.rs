@@ -6,6 +6,8 @@ pub use server::Server;
 use crate::Result;
 use std::{future::ready, ops::ControlFlow, path::Path, process::Stdio};
 
+use server::ServerDefinition;
+
 use async_lsp::{
     Error as LspError, LanguageServer as _, MainLoop, ServerSocket,
     lsp_types::{
@@ -44,7 +46,7 @@ impl LspSession {
     pub async fn start(root: &Path, backend: Server) -> Result<Self> {
         let definition = backend.definition();
         let workspace_root = canonicalize(root).await?;
-        let mut child = spawn_server(&workspace_root, definition.command, definition.args)?;
+        let mut child = spawn_server(&workspace_root, &definition)?;
         let (mainloop, mut server) = MainLoop::new_client(client_router);
         let io_task = start_io(mainloop, &mut child)?;
         let _ = server
@@ -142,14 +144,22 @@ pub fn file_uri(path: &Path) -> Result<Url> {
     Url::from_file_path(path).map_err(|()| format!("invalid file path: {}", path.display()).into())
 }
 
-fn spawn_server(root: &Path, command: &str, arguments: &[&str]) -> Result<Child> {
-    Ok(Command::new(command)
-        .args(arguments)
+fn spawn_server(root: &Path, definition: &ServerDefinition) -> Result<Child> {
+    Command::new(definition.command)
+        .args(definition.args)
         .current_dir(root)
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
         .kill_on_drop(true)
-        .spawn()?)
+        .spawn()
+        .map_err(|error| {
+            let command = format!("{} {}", definition.command, definition.args.join(" "));
+            format!(
+                "failed to start language server `{command}` in {}: {error}",
+                root.display()
+            )
+            .into()
+        })
 }
 
 fn client_router(_: ServerSocket) -> Router<()> {
