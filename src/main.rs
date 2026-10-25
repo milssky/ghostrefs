@@ -2,7 +2,7 @@
 
 //! Find production code kept alive only by tests.
 
-use std::{error::Error as StdError, result::Result as StdResult};
+use std::{error::Error as StdError, process::ExitCode, result::Result as StdResult};
 
 type Error = Box<dyn StdError>;
 type Result<T, E = Error> = StdResult<T, E>;
@@ -20,7 +20,17 @@ mod models;
 mod report;
 mod scan;
 
-fn main() -> Result<()> {
+fn main() -> ExitCode {
+    match run() {
+        Ok(()) => ExitCode::SUCCESS,
+        Err(error) => {
+            eprintln!("Error: {error}");
+            ExitCode::FAILURE
+        }
+    }
+}
+
+fn run() -> Result<()> {
     let cli = cli::Cli::parse().resolve_paths()?;
     let config = config::Config::load(&cli.root)?;
     let files = collect_workspace(&cli, &config)?;
