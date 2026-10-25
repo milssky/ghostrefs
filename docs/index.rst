@@ -72,8 +72,9 @@ Run from ``my-project``:
 
 ``--root`` is the workspace directory used to resolve Python imports.
 ``--source`` selects the production directory to report on, and ``--tests``
-identifies test consumers. Both paths are resolved relative to ``--root``.
-All three directories must exist.
+identifies test consumers using one or more files, directories, or quoted
+glob patterns. Values are resolved relative to ``--root``. Explicit paths
+must exist and every glob must match. See :doc:`pages/cli` for examples.
 
 Try the sample project
 ----------------------

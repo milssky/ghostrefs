@@ -1,4 +1,4 @@
-use crate::collect::ReferenceMode;
+use crate::{collect::ReferenceMode, test_paths::TestPaths};
 use clap::Parser;
 use std::path::{Path, PathBuf};
 
@@ -13,9 +13,9 @@ pub struct Cli {
     #[arg(short, long)]
     pub source: PathBuf,
 
-    /// Directory containing tests in root folder.
-    #[arg(short, long)]
-    pub tests: PathBuf,
+    /// Test files, directories, or quoted glob patterns relative to root.
+    #[arg(short, long, required = true, num_args = 1..)]
+    pub tests: Vec<String>,
 
     /// Include analysis roots, references, and test chains in the report.
     #[arg(short, long)]
@@ -26,7 +26,15 @@ pub struct Cli {
     pub graph: bool,
 }
 
-impl Cli {
+pub struct ResolvedCli {
+    pub root: PathBuf,
+    pub source: PathBuf,
+    pub tests: TestPaths,
+    pub verbose: bool,
+    pub graph: bool,
+}
+
+impl ResolvedCli {
     pub fn reference_mode(&self) -> ReferenceMode<'_> {
         if self.graph {
             ReferenceMode::Graph
@@ -45,17 +53,23 @@ impl Cli {
             Verbosity::Quiet
         }
     }
+}
 
-    pub fn resolve_paths(mut self) -> Result<Self, String> {
-        self.root = resolve_directory(&self.root)?;
-        self.source = resolve_directory(&self.root.join(&self.source))?;
-        self.tests = resolve_directory(&self.root.join(&self.tests))?;
-
-        if self.source.starts_with(&self.tests) {
-            return Err("production source must not be inside the test directory".into());
+impl Cli {
+    pub fn resolve_paths(self) -> Result<ResolvedCli, String> {
+        let root = resolve_directory(&self.root)?;
+        let source = resolve_directory(&root.join(&self.source))?;
+        let tests = TestPaths::resolve(&root, &self.tests)?;
+        if tests.contains(&source) {
+            return Err("production source must not be inside a test directory".into());
         }
-
-        Ok(self)
+        Ok(ResolvedCli {
+            root,
+            source,
+            tests,
+            verbose: self.verbose,
+            graph: self.graph,
+        })
     }
 }
 

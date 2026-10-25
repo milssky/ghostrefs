@@ -21,7 +21,9 @@ Invalid directory or no production files
 ----------------------------------------
 
 ``--source`` and ``--tests`` are relative to ``--root``, not necessarily the
-current working directory. All paths must identify existing directories.
+current working directory. Root and source must identify existing directories.
+Test selections accept existing files or directories and quoted glob patterns;
+each glob must match at least one file or directory.
 At least one supported production ``.py`` file must exist outside tests.
 
 .. code-block:: bash
@@ -29,7 +31,7 @@ At least one supported production ``.py`` file must exist outside tests.
    ghostrefs --root /workspace/my-project --source app --tests tests
 
 If tests are nested under ``app/tests``, use ``--source app --tests app/tests``.
-Source cannot be inside the test directory.
+Source cannot be inside any selected test directory.
 
 Missing or unexpected findings
 ------------------------------

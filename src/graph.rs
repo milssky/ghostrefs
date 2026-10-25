@@ -7,7 +7,10 @@ use std::{
 
 use async_lsp::lsp_types::{Location, Position};
 
-use crate::models::{EntryPoint, FileAnalysis, SymbolAnalysis};
+use crate::{
+    models::{EntryPoint, FileAnalysis, SymbolAnalysis},
+    test_paths::TestPaths,
+};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct NodeId(pub usize);
@@ -315,7 +318,11 @@ fn owner_at(graph: &Graph<'_>, file: &FileNodes, position: Position) -> NodeId {
 /// References add incoming edges. Starting with reportable production symbols,
 /// search their ancestors until no new consumers are discovered. A declaration
 /// outside this closure cannot affect any reported status or test chain.
-pub fn reference_targets(files: &[FileAnalysis], source: &Path, tests: &Path) -> Vec<Vec<bool>> {
+pub fn reference_targets(
+    files: &[FileAnalysis],
+    source: &Path,
+    tests: &TestPaths,
+) -> Vec<Vec<bool>> {
     let graph = build(files);
     let roots = report_roots(&graph, source, tests);
     let mut incoming = vec![Vec::new(); graph.nodes.len()];
@@ -328,7 +335,7 @@ pub fn reference_targets(files: &[FileAnalysis], source: &Path, tests: &Path) ->
     symbol_mask(files, &graph, &ancestors)
 }
 
-fn report_roots(graph: &Graph<'_>, source: &Path, tests: &Path) -> Vec<NodeId> {
+fn report_roots(graph: &Graph<'_>, source: &Path, tests: &TestPaths) -> Vec<NodeId> {
     graph
         .nodes
         .iter()
@@ -336,7 +343,7 @@ fn report_roots(graph: &Graph<'_>, source: &Path, tests: &Path) -> Vec<NodeId> {
         .filter_map(|(index, node)| match node {
             Node::Symbol { path, symbol }
                 if path.starts_with(source)
-                    && !path.starts_with(tests)
+                    && !tests.contains(path)
                     && symbol.semantics.reportable =>
             {
                 Some(NodeId(index))

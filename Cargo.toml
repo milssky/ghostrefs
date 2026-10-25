@@ -5,6 +5,7 @@ edition = "2024"
 description = "Find code kept alive only by tests"
 license = "MIT"
 repository = "https://github.com/milssky/ghostrefs"
+exclude = ["fixtures/**"]
 
 [dependencies]
 async-lsp = "0.2.4"

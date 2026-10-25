@@ -53,6 +53,28 @@ TestOnly candidates: 2 (6 production symbols analyzed)
 
 For your own project, set `--root` to the directory matching your Python imports.
 The `--source` and `--tests` paths are relative to that root.
+`--tests` accepts one or more files, directories, or glob patterns. You can
+also repeat the flag. Quote patterns so ghostrefs expands them relative to
+`--root`, independently of your shell:
+
+```bash
+ghostrefs --root . --source src --tests tests/unit tests/integration
+ghostrefs --root . --source app --tests '**/test_*.py' --tests '**/tests/**'
+```
+
+A directory includes its entire subtree. Each path must exist and each glob
+must match at least one file or directory. Patterns classify whole files as
+tests; they do not select test functions within production files.
+
+Try the scattered-tests fixture with either explicit paths or a glob. Both
+commands report `unit_only`, `integration_only`, and `colocated_only`:
+
+```bash
+ghostrefs --root fixtures/python/scattered --source app \
+  --tests tests/unit checks/integration --tests app/test_services.py
+ghostrefs --root fixtures/python/scattered --source app --tests '**/test_*.py'
+```
+
 
 Collection progress is always printed to stderr. Add `--verbose` to see why a
 symbol was flagged, or `--graph` to inspect the usage graph.
