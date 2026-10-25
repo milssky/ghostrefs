@@ -103,15 +103,3 @@ is included directly from ``ghostrefs-lsp.json`` so defaults stay current.
 The transparent brand image is ``docs/_static/images/ghostrefs-transparent.png``.
 It is used for both themes and as the favicon. The light-theme logo uses CSS
 color inversion, which preserves the PNG's alpha channel.
-
-Hosting
--------
-
-``.readthedocs.yml`` defines the hosted build. Connect the repository to
-Read the Docs to enable hosting. Set ``READTHEDOCS_CANONICAL_URL`` when building
-for another host so the generated Markdown index uses the correct public URL.
-The fallback URL assumes a Read the Docs project named ``ghostrefs``.
-
-The documentation CI job builds the HTML with warnings treated as errors and
-uploads the result as an artifact. Connecting hosting is a separate step;
-the CI build itself does not publish the site.
