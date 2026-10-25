@@ -263,7 +263,7 @@ dependencies = [
 
 [[package]]
 name = "ghostrefs"
-version = "0.0.7"
+version = "0.0.8"
 dependencies = [
  "async-lsp",
  "clap",
