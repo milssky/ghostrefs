@@ -4,6 +4,7 @@ use crate::{
     config::{Config, IgnoreRules},
     graph::{Connections, Graph, Node, NodeId, Reachability},
     models::{EntryPoint, SymbolAnalysis},
+    test_paths::TestPaths,
 };
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -41,7 +42,7 @@ impl Report<'_> {
 pub fn analyze<'source>(
     graph: &Graph<'source>,
     source: &Path,
-    tests: &Path,
+    tests: &TestPaths,
     config: &Config,
 ) -> Result<Report<'source>, String> {
     let scope = AnalysisScope {
@@ -99,7 +100,7 @@ type ReportSymbol<'source> = (&'source Path, &'source SymbolAnalysis);
 
 struct AnalysisScope<'source> {
     source: &'source Path,
-    tests: &'source Path,
+    tests: &'source TestPaths,
     ignore: &'source IgnoreRules,
 }
 
@@ -114,7 +115,7 @@ impl AnalysisScope<'_> {
     }
 
     fn is_production(&self, path: &Path) -> bool {
-        path.starts_with(self.source) && !path.starts_with(self.tests)
+        path.starts_with(self.source) && !self.tests.contains(path)
     }
 
     fn is_ignored(&self, node: &Node<'_>) -> bool {
@@ -238,14 +239,14 @@ impl Roots {
             return None;
         }
         match node {
-            Node::Module(path) if path.starts_with(scope.tests) => self.tests.push(node_id),
+            Node::Module(path) if scope.tests.contains(path) => self.tests.push(node_id),
             Node::Module(path) if scope.is_production(path) => self.production.push(node_id),
             Node::Module(_) => self.external.push(node_id),
             Node::Symbol { path, symbol } => {
                 return self.classify_symbol((node_id, symbol), path, (scope, flags));
             }
             Node::Unresolved(location) => match location.uri.to_file_path() {
-                Ok(path) if path.starts_with(scope.tests) => self.tests.push(node_id),
+                Ok(path) if scope.tests.contains(&path) => self.tests.push(node_id),
                 // The owner is missing even though the file is in source.
                 Ok(path) if scope.is_production(&path) => self.unknown.push(node_id),
                 _ => self.external.push(node_id),
@@ -264,7 +265,7 @@ impl Roots {
         if symbol.references.is_none() {
             self.unknown.push(node_id);
         }
-        if path.starts_with(scope.tests) {
+        if scope.tests.contains(path) {
             self.tests.push(node_id);
         } else if !path.starts_with(scope.source) {
             self.external.push(node_id);

@@ -19,6 +19,7 @@ mod lsp;
 mod models;
 mod report;
 mod scan;
+mod test_paths;
 
 fn main() -> ExitCode {
     match run() {
@@ -46,7 +47,10 @@ fn run() -> Result<()> {
     Ok(())
 }
 
-fn collect_workspace(cli: &cli::Cli, config: &config::Config) -> Result<Vec<models::FileAnalysis>> {
+fn collect_workspace(
+    cli: &cli::ResolvedCli,
+    config: &config::Config,
+) -> Result<Vec<models::FileAnalysis>> {
     let paths = scan::scan_workspace(&cli.root, &cli.source, &cli.tests)?;
 
     eprintln!("Collecting LSP symbols from {} files", paths.len());

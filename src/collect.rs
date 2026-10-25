@@ -17,6 +17,7 @@ use crate::{
     language::{self, Language},
     lsp::{LspSession, file_uri},
     models::FileAnalysis,
+    test_paths::TestPaths,
 };
 
 #[derive(Clone, Copy)]
@@ -24,7 +25,7 @@ pub enum ReferenceMode<'source> {
     Graph,
     Report {
         source: &'source Path,
-        tests: &'source Path,
+        tests: &'source TestPaths,
     },
 }
 

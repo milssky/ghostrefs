@@ -42,7 +42,7 @@ consumer are also inferred as production roots. This protects their
 dependencies when a real application entry point is not explicit in the
 graph. Configured :doc:`production entry points <configuration>` add roots.
 
-Test modules and symbols under ``--tests`` are test roots. Collected consumers
+Modules and symbols in files selected by ``--tests`` are test roots. Collected consumers
 outside both source and tests are outside-scope roots. Missing reference
 results, unresolved owners inside production source, and ignored nodes can
 introduce unknown roots.

@@ -3,7 +3,7 @@ Command-line reference
 
 .. code-block:: text
 
-   ghostrefs --root <ROOT> --source <SOURCE> --tests <TESTS> [--verbose] [--graph]
+   ghostrefs --root <ROOT> --source <SOURCE> --tests <TESTS>... [--verbose] [--graph]
 
 Paths and scope
 ---------------
@@ -19,21 +19,60 @@ Paths and scope
    * - ``-s, --source <SOURCE>``
      - Required production directory. Relative to the workspace root.
    * - ``-t, --tests <TESTS>``
-     - Required test directory. Relative to the workspace root.
+     - Required test files, directories, or glob patterns. Accepts multiple values and repeated flags. Relative to the workspace root.
 
-Absolute paths are also accepted. Directories are canonicalized before use.
+Explicit absolute file and directory paths are also accepted. Selected paths
+are canonicalized before use. A selected directory includes its entire subtree.
 Tests may live inside the source directory; files under tests are excluded
 from production findings. The source directory cannot be inside or equal to
-the test directory.
+any selected test directory.
 
 The scan collects ``.py`` files throughout the workspace, including consumers
-outside ``--source``. Source and test directories outside the workspace are
-also collected when supplied as absolute paths. For predictable import
-resolution, prefer a common workspace root containing both.
+outside ``--source``. Source directories and selected test files or directories
+outside the workspace are also collected. For predictable import resolution,
+prefer a common workspace root containing both.
 
 Directory traversal skips ``.git``, ``.venv``, ``venv``, ``__pycache__``, and ``target``,
 and does not descend into symlinked directories. ``.gitignore`` is not used
 as a scan filter. See :doc:`configuration` for analysis ignore rules.
+
+Test selection
+--------------
+
+.. code-block:: bash
+
+   ghostrefs --root . --source app --tests tests/unit tests/integration
+   ghostrefs --root . --source app --tests tests/unit --tests app/test_services.py
+   ghostrefs --root . --source app --tests '**/test_*.py' --tests '**/tests/**'
+
+Values are combined as a union; duplicates and overlapping selections do not
+cause files to be collected more than once. Files not selected as tests keep
+their normal production or outside-scope classification.
+
+Quote glob patterns to prevent shell expansion. Patterns are relative to
+``--root`` and cannot be absolute or contain a ``..`` component. ``*`` matches
+within one path component, ``?`` matches one character, and ``**`` supports
+recursive matching. For example, ``test*`` selects matching entries directly
+under the root, while ``**/test_*.py`` selects test files at any depth.
+Character classes and brace alternatives are also supported. Glob expansion
+uses the traversal exclusions listed above. An existing literal path takes
+precedence over glob syntax, including special characters in its name.
+
+Every explicit path must exist, every glob must match at least one file or
+directory, and malformed patterns are errors. These checks happen before LSP
+collection. Matching an empty directory is allowed, as with an explicit path.
+Selection classifies entire files; it does not identify test functions inside
+files containing production code.
+
+The sample under ``fixtures/python/scattered`` contains two separate test
+directories and a test file inside the production directory. These commands
+both report ``unit_only``, ``integration_only``, and ``colocated_only``:
+
+.. code-block:: bash
+
+   ghostrefs --root fixtures/python/scattered --source app \
+     --tests tests/unit checks/integration --tests app/test_services.py
+   ghostrefs --root fixtures/python/scattered --source app --tests '**/test_*.py'
 
 Output options
 --------------
