@@ -119,6 +119,7 @@ Next steps
 * :doc:`pages/cli` describes every command-line option and the output formats.
 * :doc:`pages/configuration` covers ignore patterns, production entry points,
   and Pyright settings.
+* :doc:`pages/github-action` shows how to run ghostrefs in GitHub Actions.
 * :doc:`pages/troubleshooting` helps with imports, missing findings, and errors.
 
 Every page is also available as Markdown: replace ``.html`` with ``.md`` in its
@@ -132,6 +133,7 @@ the guide and ``llms-full.txt`` contains it in one file.
    self
    pages/cli
    pages/configuration
+   pages/github-action
    pages/analysis
    pages/troubleshooting
 
