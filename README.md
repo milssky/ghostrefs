@@ -89,6 +89,32 @@ Ghostrefs uses a single Pyright process and sends reference requests sequentiall
 Findings are candidates for review: dynamic imports, reflection, and external
 consumers may be invisible to the language server.
 
+## GitHub Action
+
+Add `.github/workflows/ghostrefs.yml` to your Python project:
+
+```yaml
+name: ghostrefs
+on: [push, pull_request]
+
+permissions:
+  contents: read
+
+jobs:
+  ghostrefs:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: milssky/ghostrefs@master
+        with:
+          source: app
+          tests: tests
+```
+
+See the [GitHub Action guide](docs/pages/github-action.rst) for inputs and examples.
+
 ## Documentation
 
 Start with [Getting started](docs/index.rst), then explore the
@@ -97,3 +123,7 @@ and [analysis model](docs/pages/analysis.rst).
 
 See the [development guide](docs/pages/contributing.rst) to build the searchable
 HTML documentation locally.
+
+## License
+
+[MIT](https://github.com/milssky/ghostrefs/blob/master/LICENSE)

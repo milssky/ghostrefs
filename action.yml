@@ -1,0 +1,40 @@
+name: ghostrefs
+description: Find Python production code kept alive only by tests
+
+inputs:
+  root:
+    description: Workspace root, relative to the workflow working directory
+    default: '.'
+  source:
+    description: Production directory, relative to root
+    required: true
+  tests:
+    description: Test paths or glob patterns relative to root, one per line
+    required: true
+  fail-on-findings:
+    description: Fail the step when TestOnly candidates are found
+    default: 'true'
+
+runs:
+  using: composite
+  steps:
+    - name: Run ghostrefs
+      shell: bash
+      env:
+        GHOSTREFS_ACTION_PATH: ${{ github.action_path }}
+        GHOSTREFS_ROOT: ${{ inputs.root }}
+        GHOSTREFS_SOURCE: ${{ inputs.source }}
+        GHOSTREFS_TESTS: ${{ inputs.tests }}
+        GHOSTREFS_FAIL_ON_FINDINGS: ${{ inputs.fail-on-findings }}
+      run: | # zizmor: ignore[adhoc-packages] -- Keep installation self-contained for now.
+        npm install -g pyright@1.1.407
+        cargo install --path "$GHOSTREFS_ACTION_PATH" --locked
+
+        args=(--root "$GHOSTREFS_ROOT" --source "$GHOSTREFS_SOURCE")
+        while IFS= read -r selection; do
+          [[ -z "$selection" ]] || args+=(--tests "$selection")
+        done <<< "$GHOSTREFS_TESTS"
+        if [[ "$GHOSTREFS_FAIL_ON_FINDINGS" == true ]]; then
+          args+=(--fail-on-findings)
+        fi
+        ghostrefs "${args[@]}"
