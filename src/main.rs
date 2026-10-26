@@ -23,7 +23,7 @@ mod test_paths;
 
 fn main() -> ExitCode {
     match run() {
-        Ok(()) => ExitCode::SUCCESS,
+        Ok(status) => status,
         Err(error) => {
             eprintln!("Error: {error}");
             ExitCode::FAILURE
@@ -31,20 +31,28 @@ fn main() -> ExitCode {
     }
 }
 
-fn run() -> Result<()> {
+fn run() -> Result<ExitCode> {
     let cli = cli::Cli::parse().resolve_paths()?;
     let config = config::Config::load(&cli.root)?;
     let files = collect_workspace(&cli, &config)?;
     let graph = graph::build(&files);
     if cli.graph {
         report::print_graph(&graph);
-        return Ok(());
+        return Ok(ExitCode::SUCCESS);
     }
 
     let report = analysis::analyze(&graph, &cli.source, &cli.tests, &config)?;
     report::print_report(&report, &graph, cli.verbosity());
 
-    Ok(())
+    let has_findings = report
+        .usages
+        .iter()
+        .any(|usage| usage.status == analysis::UsageStatus::TestOnly);
+    Ok(if cli.fail_on_findings && has_findings {
+        ExitCode::FAILURE
+    } else {
+        ExitCode::SUCCESS
+    })
 }
 
 fn collect_workspace(

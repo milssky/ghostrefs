@@ -89,8 +89,8 @@ Example output (the absolute path prefix is shortened here):
 
 .. code-block:: text
 
-   TestOnly …/main.py:6:5 test_only_used_func (Function)
-   TestOnly …/main.py:14:7 TestOnlyUsedClass (Class)
+   …/main.py:6:5 test_only_used_func (Function)
+   …/main.py:14:7 TestOnlyUsedClass (Class)
    TestOnly candidates: 2 (6 production symbols analyzed)
 
 Each finding gives the file, line, column, qualified symbol name, and symbol

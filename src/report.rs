@@ -61,8 +61,7 @@ pub fn print_report(report: &Report<'_>, graph: &Graph<'_>, verbosity: Verbosity
 fn print_usage(usage: &SymbolUsage<'_>) {
     let symbol = usage.symbol;
     println!(
-        "{:?} {}:{}:{} {} ({:?})",
-        usage.status,
+        "{}:{}:{} {} ({:?})",
         usage.path.display(),
         symbol.selection_range.start.line.saturating_add(1),
         symbol.selection_range.start.character.saturating_add(1),

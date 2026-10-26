@@ -46,8 +46,8 @@ ghostrefs --root . --source fixtures/python/project --tests fixtures/python/test
 ```
 
 ```text
-TestOnly …/main.py:6:5 test_only_used_func (Function)
-TestOnly …/main.py:14:7 TestOnlyUsedClass (Class)
+…/main.py:6:5 test_only_used_func (Function)
+…/main.py:14:7 TestOnlyUsedClass (Class)
 TestOnly candidates: 2 (6 production symbols analyzed)
 ```
 
@@ -78,6 +78,9 @@ ghostrefs --root fixtures/python/scattered --source app --tests '**/test_*.py'
 
 Collection progress is always printed to stderr. Add `--verbose` to see why a
 symbol was flagged, or `--graph` to inspect the usage graph.
+Add `--fail-on-findings` to exit with status `1` when TestOnly candidates are
+found, for example in CI. A scan with no findings exits with status `0`.
+This flag cannot be combined with `--graph`.
 Configure ignore patterns, production entry points, and Pyright settings in
 `ghostrefs-lsp.json` at the project root.
 

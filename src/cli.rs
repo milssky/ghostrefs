@@ -24,6 +24,10 @@ pub struct Cli {
     /// Print usage graph edges instead of direct usage statuses.
     #[arg(long)]
     pub graph: bool,
+
+    /// Exit with status 1 when `TestOnly` candidates are found.
+    #[arg(long, conflicts_with = "graph")]
+    pub fail_on_findings: bool,
 }
 
 pub struct ResolvedCli {
@@ -32,6 +36,7 @@ pub struct ResolvedCli {
     pub tests: TestPaths,
     pub verbose: bool,
     pub graph: bool,
+    pub fail_on_findings: bool,
 }
 
 impl ResolvedCli {
@@ -69,6 +74,7 @@ impl Cli {
             tests,
             verbose: self.verbose,
             graph: self.graph,
+            fail_on_findings: self.fail_on_findings,
         })
     }
 }

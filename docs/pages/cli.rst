@@ -3,7 +3,7 @@ Command-line reference
 
 .. code-block:: text
 
-   ghostrefs --root <ROOT> --source <SOURCE> --tests <TESTS>... [--verbose] [--graph]
+   ghostrefs --root <ROOT> --source <SOURCE> --tests <TESTS>... [--verbose] [--graph | --fail-on-findings]
 
 Paths and scope
 ---------------
@@ -87,6 +87,8 @@ Output options
      - Add roots, references, and test chains to the normal report on stdout.
    * - ``--graph``
      - Print usage graph edges in place of the findings report.
+   * - ``--fail-on-findings``
+     - Exit with status ``1`` when TestOnly candidates are found. Cannot be combined with ``--graph``.
    * - ``-h, --help``
      - Show usage and options.
    * - ``-V, --version``
@@ -102,7 +104,7 @@ includes other usage statuses; it is not a count of findings.
 
 .. code-block:: text
 
-   TestOnly /workspace/app/services.py:6:5 legacy_helper (Function)
+   /workspace/app/services.py:6:5 legacy_helper (Function)
    TestOnly candidates: 1 (12 production symbols analyzed)
 
 The report includes eligible production declarations such as top-level
@@ -149,8 +151,16 @@ classification.
 Exit behavior
 -------------
 
-A completed scan exits with status ``0``, including when candidates are found.
-Errors produce a nonzero status. Findings currently do not fail a CI job.
+A completed scan exits with status ``0`` by default, including when candidates
+are found. With ``--fail-on-findings``, it exits with status ``1`` if at least
+one TestOnly candidate is reported, or ``0`` if none are found. The report is
+printed normally in either case, including with ``--verbose``.
 
-Output is human-readable text. There is no JSON output or dedicated
-fail-on-findings option in the current release.
+.. code-block:: bash
+
+   ghostrefs --root . --source app --tests tests --fail-on-findings
+
+Errors produce a nonzero status regardless of this flag. Graph mode does not
+classify findings, so ``--graph`` and ``--fail-on-findings`` are mutually exclusive.
+
+Output is human-readable text. There is no JSON output.
