@@ -113,14 +113,6 @@ jobs:
           tests: tests
 ```
 
-The action installs Pyright and builds ghostrefs from the selected action ref.
-Use a runner with Rust/Cargo and Node.js/npm installed, such as `ubuntu-latest`.
-Set up your project's Python dependencies before the action if needed.
-
-`root` defaults to `.`; `source` and `tests` are relative to it. For multiple
-test paths or globs, pass one per line using `tests: |`.
-Findings fail the step by default; set `fail-on-findings: 'false'` to only report
-them. Pin the action to a commit SHA for reproducible workflows.
 See the [GitHub Action guide](docs/pages/github-action.rst) for inputs and examples.
 
 ## Documentation
@@ -131,3 +123,7 @@ and [analysis model](docs/pages/analysis.rst).
 
 See the [development guide](docs/pages/contributing.rst) to build the searchable
 HTML documentation locally.
+
+## License
+
+[MIT](https://github.com/milssky/ghostrefs/blob/master/LICENSE)
